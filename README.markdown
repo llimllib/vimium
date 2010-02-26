@@ -59,6 +59,19 @@ Manipulating tabs:
 Vimium supports command repetition so, for example, hitting '5t' will open 5 tabs in rapid succession. ESC (or
 <c-[>) will clear any partial commands in the queue.
 
+Editing the exclusion list
+------------
+
+1. Navigate to chrome://extensions/ (i.e. put that address in the address bar and hit enter)
+2. Click on the "options" button for vimium
+3. Add the site you want to exclude into the exclusion list
+  1. The entries in the list are regular expressions. So if you want to block vimium from running on google reader, thus ensuring that its keyboard shortcuts work, put this entry in the list:
+
+    http://www.google.com/reader/*
+  2. Enter one site per line that you want to exclude
+4. Click "save options"
+5. The sites in your exclusion list will now be blocked.
+
 Contributing
 ------------
 
