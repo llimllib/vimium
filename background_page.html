@@ -508,8 +508,20 @@
   function init() {
     clearKeyMappingsAndSetDefaults();
 
-    if (localStorage["keyMappings"])
-      parseCustomKeyMappings(localStorage["keyMappings"]);
+    //old and busted
+    //if (localStorage["keyMappings"])
+    //  parseCustomKeyMappings(localStorage["keyMappings"]);
+
+    var xhr = new XMLHttpRequest();
+    console.log("making request");
+    xhr.onreadystatechange = function() {
+        if (this.readyState == 4) {
+            //console.log("result: ", xhr.status, "|", xhr.responseText);
+            parseCustomKeyMappings(xhr.responseText);
+        }
+    }
+    xhr.open("GET", 'http://github.com/llimllib/personal_code/raw/master/homedir/.vimiumrc', true);
+    xhr.send();
 
     populateValidFirstKeys();
     populateSingleKeyCommands();
@@ -520,3 +532,5 @@
 </script>
 </head>
 </html>
+<!-- I don't think this works? -->
+<!-- chrome-extension://koipnlobnhbbbacdfccmhaagkmfilifm/background_page.html -->
