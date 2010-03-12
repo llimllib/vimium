@@ -1,14 +1,17 @@
 <html>
   <head>
     <title>Vimium Options</title>
+    <script src="lib/keyboardUtils.js"></script>
+
     <style type="text/css" media="screen">
       body {
         font-family:"helvetica neue", "helvetica", "arial", "sans";
-        width:600px;
+        width:640px;
         margin:10px auto;
       }
+      a, a:visited { color:blue; }
       #optionsTableWrapper {
-        width:450px;
+        width:490px;
         border:1px solid red;
       }
       .example {
@@ -23,11 +26,15 @@
         padding:5px 0;
       }
       textarea#excludedUrls {
-        width:450px;
+        width:490px;
         min-height:100px;
       }
       textarea#userDefinedLinkHintCss {
-        width:302px;
+        width:342px;
+        min-height:100px;
+      }
+      textarea#keyMappings {
+        width:342px;
         min-height:100px;
       }
       #status {
@@ -41,10 +48,14 @@
       }
       #buttonsPanel {
         /* This should match the width of #excludedUrls + 5px of padding to move the buttons to the right. */
-        width:455px;
+        width:495px;
         text-align:right;
         margin-top:18px;
         margin-right:-10px;
+      }
+      #showHelpDialogMessage {
+        width:495px;
+        font-size:15px;
       }
       .help {
         position:absolute;
@@ -59,20 +70,35 @@
 
   <script type="text/javascript">
   $ = function(id) { return document.getElementById(id); };
+  currentlyShowingDialog = null;
 
   var defaultSettings = chrome.extension.getBackgroundPage().defaultSettings;
 
   var editableFields = ["scrollStepSize", "defaultZoomLevel", "excludedUrls", "linkHintCharacters",
-    "userDefinedLinkHintCss"];
+    "userDefinedLinkHintCss", "keyMappings"];
+
+  var postSaveHooks = {
+    "keyMappings": function (value) {
+      backgroundPage = chrome.extension.getBackgroundPage();
+      backgroundPage.clearKeyMappingsAndSetDefaults();
+      backgroundPage.parseCustomKeyMappings(value);
+      backgroundPage.refreshCompletionKeysAfterMappingSave();
+    }
+  };
 
   function initializeOptions() {
     populateOptions();
     for (var i = 0; i < editableFields.length; i++)
-      $(editableFields[i]).addEventListener("keyup", onOptionKeydown, false);
+      $(editableFields[i]).addEventListener("keyup", onOptionKeyup, false);
     $("advancedOptions").addEventListener("click", openAdvancedOptions, false);
+    $("showCommands").addEventListener("click", function () {
+      showDialog("vimiumCommandListingContainer",
+        chrome.extension.getBackgroundPage().helpDialogHtml(true, true, "Command Listing"));
+    }, false);
+    document.addEventListener("keydown", onKeydown, true);
   }
 
-  function onOptionKeydown(event) {
+  function onOptionKeyup(event) {
     if (event.target.getAttribute("savedValue") != event.target.value)
       enableSaveButton();
   }
@@ -94,6 +120,8 @@
         localStorage[fieldName] = fieldValue;
       $(fieldName).value = fieldValue;
       $(fieldName).setAttribute("savedValue", fieldValue);
+
+      if (postSaveHooks[fieldName]) { postSaveHooks[fieldName](fieldValue); }
     }
     $("saveOptions").disabled = true;
   }
@@ -119,6 +147,36 @@
     event.preventDefault();
   }
 
+  function showDialog(dialogId, dialogHtml) {
+    if (currentlyShowingDialog)
+      return false;
+
+    currentlyShowingDialog = dialogId;
+    var container = document.createElement("div");
+    container.id = currentlyShowingDialog;
+    container.innerHTML = dialogHtml;
+    container.getElementsByClassName("closeButton")[0].addEventListener("click", hideDialog, false);
+    document.body.appendChild(container);
+    var dialog = document.getElementById("vimiumHelpDialog");
+    dialog.style.top = Math.max((window.innerHeight - dialog.clientHeight) / 2.0, 20) + "px";
+  }
+
+  function hideDialog() {
+    var dialog = document.getElementById(currentlyShowingDialog);
+    if (dialog)
+      dialog.parentNode.removeChild(dialog);
+
+    currentlyShowingDialog = null;
+  }
+
+  function onKeydown(event) {
+    var keyChar = getKeyChar(event);
+    var isFormField = ["INPUT", "TEXTAREA"].indexOf(event.target.tagName) >= 0;
+    if (currentlyShowingDialog && isEscape(event))
+      hideDialog();
+    else if (!currentlyShowingDialog && getKeyChar(event) == "?" && !isFormField)
+      showDialog("vimiumCommandListingContainer", chrome.extension.getBackgroundPage().helpDialogHtml());
+  }
   </script>
 
   </head>
@@ -157,6 +215,25 @@
         </td>
       </tr>
       <tr class="advancedOption">
+        <td class="caption">Key mappings</td>
+        <td verticalAlign="top">
+          <div class="help">
+            <div class="example">
+              <!-- TODO(ilya/philc): Expand this and style it better. -->
+              Enter commands to remap your keys. Available commands:<br/>
+              <div style="margin-left:10px;margin-top:5px">
+                map j scrollDown<br/>
+                unmap j<br/>
+                " this is a comment<br/>
+                # this is also a comment<br/>
+              </div>
+              <a href="#" id="showCommands">Show available commands.</a>
+            </div>
+          </div>
+          <textarea id="keyMappings" type="text"></textarea>
+        </td>
+      </tr>
+      <tr class="advancedOption">
         <td class="caption">Characters used<br/> for link hints</td>
         <td verticalAlign="top">
             <div class="help">
@@ -170,14 +247,14 @@
       <tr class="advancedOption">
         <td class="caption">CSS for link hints</td>
         <td verticalAlign="top">
-            <div class="help">
-              <div class="example">
-                The CSS used to style the characters next to each link hint.<br/><br/>
-                Note: these styles are used in addition to and take precedence over Vimium's
-                default styles.
-              </div>
+          <div class="help">
+            <div class="example">
+              The CSS used to style the characters next to each link hint.<br/><br/>
+              Note: these styles are used in addition to and take precedence over Vimium's
+              default styles.
             </div>
-            <textarea id="userDefinedLinkHintCss" type="text"></textarea>
+          </div>
+          <textarea id="userDefinedLinkHintCss" type="text"></textarea>
         </td>
       </tr>
     </table>
@@ -187,46 +264,10 @@
       <button id="saveOptions" disabled="true" onclick="saveOptions()">Save Options</button>
     </div>
 
-    <h1>Command Reference</h1>
-    <pre>
-&lt;c-x&gt; is to be interpreted as ctrl + x together.
+    <br/>
 
-Navigating the current page:
-    h       scroll left
-    j       scroll down
-    k       scroll up
-    l       scroll right
-    gg      scroll to top of the page
-    G       scroll to bottom of the page
-    &lt;c-d&gt;, &lt;c-e&gt;   scroll down a page
-    &lt;c-u&gt;, &lt;c-y&gt;   scroll up a page
-    &lt;c-f&gt;   scroll down a full page
-    &lt;c-b&gt;   scroll up a full page
-    f       activate link hints mode to open in current tab
-    F       activate link hints mode to open in new tab
-    r       reload
-    gf      view source
-    zi      zoom in
-    zo      zoom out
-    /       enter find mode -- type your search query and hit enter to search or esc to cancel
-    n       cycle forward to the next find match
-    N       cycle backward to the previous find match
-    i       enter insert mode -- all commands will be ignored until you hit esc to exit
-    y       copy the current url to the clipboard
-
-Navigating your history:
-    ba, H         go back in history
-    fw, fo, L     go forward in history
-
-Manipulating tabs:
-    J, gT      go one tab left
-    K, gt      go one tab right
-    t          create tab
-    d          close current tab
-    u          restore closed tab (i.e. unwind the 'd' command)
-
-Vimium supports command repetition so, for example, hitting '5t' will open 5 tabs in rapid
-succession. ESC will clear any partial commands in the queue.
-    </pre>
+    <div id="showHelpDialogMessage">
+      To view all available shortcuts, type <span style="font-weight:bold">?</span> to show the Vimium help dialog.
+    </div>
   </body>
 </html>

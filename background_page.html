@@ -1,14 +1,17 @@
 <html>
 <head>
+<script type="text/javascript" src="commands.js"/>
 <script type="text/javascript" charset="utf-8">
   // Currently we need to remember to change this each time we push. Chromium #15242 will enable us
   // to retrieve this programmatically.
-  var currentVersion = "1.15";
+  var currentVersion = "1.16";
 
   var tabQueue = {}; // windowId -> Array
   var keyQueue = ""; // Queue of keys typed
   var validFirstKeys = {};
   var singleKeyCommands = [];
+
+  var hasModifierRegex = /^<[amc]-.>/;
 
   var defaultSettings = {
     scrollStepSize: 60,
@@ -137,6 +140,66 @@
     var zoomLevel = parseInt(zoomLevelForDomain || localStorage["defaultZoomLevel"] ||
         defaultSettings.defaultZoomLevel);
     returnPort.postMessage({ zoomLevel: zoomLevel });
+  }
+
+  function showHelp() {
+    chrome.tabs.getSelected(null, function(tab) {
+      chrome.tabs.sendRequest(tab.id, { name: "showHelpDialog", dialogHtml: helpDialogHtml() });
+    });
+  }
+
+  /*
+   * Retrieves the help dialog HTML template from a file, and populates it with the latest keybindings.
+   */
+  function helpDialogHtml(showUnboundCommands, showCommandNames, customTitle) {
+    var commandsToKey = {};
+    for (var key in keyToCommandRegistry) {
+      var command = keyToCommandRegistry[key].command;
+      commandsToKey[command] = (commandsToKey[command] || []).concat(key);
+    }
+    var dialogHtml = fetchFileContents("helpDialog.html");
+    for (var group in commandGroups)
+      dialogHtml = dialogHtml.replace("{{" + group + "}}",
+          helpDialogHtmlForCommandGroup(group, commandsToKey, availableCommands,
+                                        showUnboundCommands, showCommandNames));
+    dialogHtml = dialogHtml.replace("{{version}}", currentVersion);
+    dialogHtml = dialogHtml.replace("{{title}}", customTitle || "Help");
+    return dialogHtml;
+  }
+
+  /*
+   * Generates HTML for a given set of commands. commandGroups are defined in commands.js
+   */
+  function helpDialogHtmlForCommandGroup(group, commandsToKey, availableCommands,
+                                         showUnboundCommands, showCommandNames) {
+    var html = [];
+    for (var i = 0; i < commandGroups[group].length; i++) {
+      var command = commandGroups[group][i];
+      bindings = (commandsToKey[command] || [""]).join(", ")
+      if (showUnboundCommands || commandsToKey[command])
+      {
+        html.push("<tr><td>", escapeHtml(bindings),
+          "</td><td>:</td><td>", availableCommands[command].description);
+
+        if (showCommandNames)
+          html.push("<span class='commandName'>(" + command + ")</span>");
+
+        html.push("</td></tr>");
+      }
+    }
+    return html.join("\n");
+  }
+
+  function escapeHtml(string) { return string.replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  /*
+   * Fetches the contents of a file bundled with this extension.
+   */
+  function fetchFileContents(extensionFileName) {
+    var req = new XMLHttpRequest();
+    req.open("GET", chrome.extension.getURL(extensionFileName), false); // false => synchronous
+    req.send();
+    return req.responseText;
   }
 
   /**
@@ -274,54 +337,16 @@
   }
   // End action functions
 
-  var keyToCommandRegistry = {};
-  keyToCommandRegistry['j']  = 'scrollDown';
-  keyToCommandRegistry['k']  = 'scrollUp';
-  keyToCommandRegistry['h']  = 'scrollLeft';
-  keyToCommandRegistry['l']  = 'scrollRight';
-  keyToCommandRegistry['gg'] = 'scrollToTop';
-  keyToCommandRegistry['G']  = 'scrollToBottom';
-  keyToCommandRegistry['<c-e>']  = 'scrollDown';
-  keyToCommandRegistry['<c-y>']  = 'scrollUp';
-  keyToCommandRegistry['<c-d>'] = "scrollPageDown";
-  keyToCommandRegistry['<c-u>'] = "scrollPageUp";
-  keyToCommandRegistry['<c-f>'] = "scrollFullPageDown";
-  keyToCommandRegistry['<c-b>'] = "scrollFullPageUp";
-  keyToCommandRegistry['r']  = 'reload';
-  keyToCommandRegistry['gf'] = 'toggleViewSource';
-
-  keyToCommandRegistry['i']  = 'enterInsertMode';
-
-  keyToCommandRegistry['ba'] = 'goBack';
-  keyToCommandRegistry['H']  = 'goBack';
-  keyToCommandRegistry['fw'] = 'goForward';
-  keyToCommandRegistry['fo'] = 'goForward';
-  keyToCommandRegistry['L']  = 'goForward';
-
-  keyToCommandRegistry['zi'] = 'zoomIn';
-  keyToCommandRegistry['zo'] = 'zoomOut';
-
-  keyToCommandRegistry['f']  = 'activateLinkHintsMode';
-  keyToCommandRegistry['F']  = 'activateLinkHintsModeToOpenInNewTab';
-
-  keyToCommandRegistry['/']  = 'enterFindMode';
-  keyToCommandRegistry['n']  = 'performFind';
-  keyToCommandRegistry['N']  = 'performBackwardsFind';
-
-  keyToCommandRegistry['yy']  = 'copyCurrentUrl';
-
-  keyToCommandRegistry['K']  = nextTab;
-  keyToCommandRegistry['J']  = previousTab;
-  keyToCommandRegistry['gt'] = nextTab;
-  keyToCommandRegistry['gT'] = previousTab;
-
-  keyToCommandRegistry['t']  = createTab;
-  keyToCommandRegistry['d']  = removeTab;
-  keyToCommandRegistry['u']  = restoreTab;
+  function splitKeyIntoFirstAndSecond(key) {
+    if (key.search(hasModifierRegex) == 0)
+      return { first: key.slice(0, 5), second: key.slice(5) };
+    else
+      return { first: key[0], second: key.slice(1) };
+  }
 
   function getActualKeyStrokeLength(key) {
-    if (key.slice(0, 3) == "<c-" && key[key.length - 1] == ">")
-      return 1;
+    if (key.search(hasModifierRegex) == 0)
+      return 1 + getActualKeyStrokeLength(key.slice(5));
     else
       return key.length;
   }
@@ -329,8 +354,8 @@
   function populateValidFirstKeys() {
     for (var key in keyToCommandRegistry)
     {
-      if (key.length == 2)
-        validFirstKeys[key[0]] = true;
+      if (getActualKeyStrokeLength(key) == 2)
+        validFirstKeys[splitKeyIntoFirstAndSecond(key).first] = true;
     }
   }
 
@@ -340,6 +365,16 @@
       if (getActualKeyStrokeLength(key) == 1)
         singleKeyCommands.push(key);
     }
+  }
+
+  function refreshCompletionKeysAfterMappingSave() {
+    validFirstKeys = {};
+    singleKeyCommands = [];
+
+    populateValidFirstKeys();
+    populateSingleKeyCommands();
+
+    sendRequestToAllTabs({ name: "refreshCompletionKeys", completionKeys: generateCompletionKeys() });
   }
 
   /*
@@ -357,9 +392,9 @@
     {
       for (var key in keyToCommandRegistry)
       {
-        // NOTE(ilya): This won't work if we allow keys like <c-x><c-y>.
-        if (key[0] == command)
-          completionKeys.push(key.substring(1));
+        var splitKey = splitKeyIntoFirstAndSecond(key);
+        if (splitKey.first == command)
+         completionKeys.push(splitKey.second);
       }
     }
 
@@ -397,25 +432,27 @@
 
     if (keyToCommandRegistry[command]) {
       registryEntry = keyToCommandRegistry[command];
-      console.log("command found for [", keysToCheck, "],", registryEntry);
+      console.log("command found for [", keysToCheck, "],", registryEntry.command);
 
-      if (typeof(registryEntry) == "string") {
+      if (!registryEntry.isBackgroundCommand) {
         var port = chrome.tabs.connect(tabId, { name: "executePageCommand" });
-        port.postMessage({ command: registryEntry, count: count,
+        port.postMessage({ command: registryEntry.command, count: count,
                             completionKeys: generateCompletionKeys("") });
 
         refreshedCompletionKeys = true;
       } else {
-        repeatFunction(registryEntry, count, 0);
+        repeatFunction(this[registryEntry.command], count, 0);
       }
 
       newKeyQueue = "";
-    } else if (command.length > 1) {
+    } else if (getActualKeyStrokeLength(command) > 1) {
+      var splitKey = splitKeyIntoFirstAndSecond(command);
+
       // The second key might be a valid command by its self.
-      if (keyToCommandRegistry[command[1]])
-        newKeyQueue = checkKeyQueue(command[1]);
+      if (keyToCommandRegistry[splitKey.second])
+        newKeyQueue = checkKeyQueue(splitKey.second);
       else
-        newKeyQueue = (validFirstKeys[command[1]] ? command[1] : "");
+        newKeyQueue = (validFirstKeys[splitKey.second] ? splitKey.second : "");
     } else {
       newKeyQueue = (validFirstKeys[command] ? count.toString() + command : "");
     }
@@ -469,12 +506,16 @@
   }
 
   function init() {
+    clearKeyMappingsAndSetDefaults();
+
+    if (localStorage["keyMappings"])
+      parseCustomKeyMappings(localStorage["keyMappings"]);
+
     populateValidFirstKeys();
     populateSingleKeyCommands();
     if (shouldShowUpgradeMessage())
       sendRequestToAllTabs({ name: "showUpgradeNotification", version: currentVersion });
   }
-
   init();
 </script>
 </head>
