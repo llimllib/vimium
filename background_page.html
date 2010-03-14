@@ -58,7 +58,8 @@
   var sendRequestHandlers = {
     getCompletionKeys: getCompletionKeys,
     getLinkHintCss: getLinkHintCss,
-    upgradeNotificationClosed: upgradeNotificationClosed
+    upgradeNotificationClosed: upgradeNotificationClosed,
+    makePopup: handlePopup
   };
 
   // Event handlers
@@ -223,6 +224,21 @@
   function upgradeNotificationClosed(request) {
     localStorage.previousVersion = currentVersion;
     sendRequestToAllTabs({ name: "hideUpgradeNotification" });
+  }
+
+  /*
+   * Used by plugins that want to create a popup window, since "window.open" appears
+   * not to work in a content script
+   */
+  function handlePopup(request) {
+    console.log("popping up", request);
+    chrome.windows.create({url: request.url,
+                           left: request.left,
+                           top: request.top,
+                           width: request.width,
+                           height: request.height
+                          });
+    return {};
   }
 
   /*
