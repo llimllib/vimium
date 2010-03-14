@@ -95,6 +95,9 @@ function clearKeyMappingsAndSetDefaults() {
   mapKeyToCommand('t', 'createTab');
   mapKeyToCommand('d', 'removeTab');
   mapKeyToCommand('u', 'restoreTab');
+  
+  // experimental
+  mapKeyToCommand('b', 'runReadability');
 }
 
 // Navigating the current page:
@@ -136,6 +139,9 @@ addCommand('createTab',           'Create new tab',    true);
 addCommand('removeTab',           'Close current tab', true);
 addCommand('restoreTab',          "Restore closed tab", true);
 
+//experimental
+addCommand('runReadability',      "run readability");
+
 
 // An ordered listing of all available commands, grouped by type. This is the order they will
 // be shown in the help page.
@@ -149,5 +155,7 @@ var commandGroups = {
   historyNavigation:
     ["goBack", "goForward"],
   tabManipulation:
-    ["nextTab", "previousTab", "createTab", "removeTab", "restoreTab"]
+    ["nextTab", "previousTab", "createTab", "removeTab", "restoreTab"],
+  experimental:
+    ["runReadability"]
 };
