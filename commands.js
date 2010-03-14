@@ -48,6 +48,15 @@ function parseCustomKeyMappings(customKeyMappings) {
       console.log("Unmapping", key);
       unmapKey(key);
     }
+    else if (lineCommand == "exclude") {
+      if (localStorage["excludedUrls"] === undefined)
+        localStorage["excludedUrls"] = "";
+
+      if (localStorage["excludedUrls"].indexOf(key) < 0) {
+        console.log("exculding", key, localStorage["excludedUrls"]);
+        localStorage["excludedUrls"] += key + "\n";
+      }
+    }
   }
 }
 
