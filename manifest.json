@@ -17,7 +17,8 @@
              "plugins/readability.js",
              "plugins/readitlater.js",
              "plugins/delicious.js",
-             "plugins/tumblr.js"
+             "plugins/tumblr.js",
+             "plugins/reddit.js"
             ],
       "run_at": "document_start"
     }
