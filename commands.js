@@ -106,7 +106,10 @@ function clearKeyMappingsAndSetDefaults() {
   mapKeyToCommand('u', 'restoreTab');
   
   // experimental
-  mapKeyToCommand('b', 'runReadability');
+  mapKeyToCommand('pb', 'runReadability');
+  mapKeyToCommand('pr', 'runReadItLater');
+  mapKeyToCommand('pt', 'runTumblr');
+  mapKeyToCommand('pd', 'runDelicious');
 }
 
 // Navigating the current page:
@@ -149,8 +152,10 @@ addCommand('removeTab',           'Close current tab', true);
 addCommand('restoreTab',          "Restore closed tab", true);
 
 //experimental
-addCommand('runReadability',      "run readability");
-
+addCommand('runReadability',      "run Readability bookmarklet");
+addCommand("runReadItLater",      "run Read It Later bookmarklet");
+addCommand("runTumblr",           "run Tumblr bookmarklet");
+addCommand("runDelicious",        "run del.icio.us bookmarklet");
 
 // An ordered listing of all available commands, grouped by type. This is the order they will
 // be shown in the help page.
@@ -166,5 +171,5 @@ var commandGroups = {
   tabManipulation:
     ["nextTab", "previousTab", "createTab", "removeTab", "restoreTab"],
   experimental:
-    ["runReadability"]
+    ["runReadability", "runReadItLater", "runTumblr", "runDelicious"]
 };

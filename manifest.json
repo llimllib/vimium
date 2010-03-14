@@ -14,7 +14,10 @@
              "lib/clipboard.js",
              "linkHints.js",
              "vimiumFrontend.js",
-             "plugins/readability.js"
+             "plugins/readability.js",
+             "plugins/readitlater.js",
+             "plugins/delicious.js",
+             "plugins/tumblr.js"
             ],
       "run_at": "document_start"
     }
