@@ -1,3 +1,6 @@
+//TODO: this opens a real window, instead of a popup window
+//      without a location bar or bookmarks bar, which would be
+//      ideal to have
 function runTumblr() {
     var d=document,
     w=window,
