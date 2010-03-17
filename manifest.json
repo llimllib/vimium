@@ -18,7 +18,8 @@
              "plugins/readitlater.js",
              "plugins/delicious.js",
              "plugins/tumblr.js",
-             "plugins/reddit.js"
+             "plugins/reddit.js",
+             "plugins/instapaper.js"
             ],
       "run_at": "document_start"
     }

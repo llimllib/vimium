@@ -111,6 +111,7 @@ function clearKeyMappingsAndSetDefaults() {
   mapKeyToCommand('pt', 'runTumblr');
   mapKeyToCommand('pd', 'runDelicious');
   mapKeyToCommand('pa', 'runRedditSubmit');
+  mapKeyToCommand('pi', 'runInstapaper');
 }
 
 // Navigating the current page:
@@ -158,6 +159,7 @@ addCommand("runReadItLater",      "run Read It Later bookmarklet");
 addCommand("runTumblr",           "run Tumblr bookmarklet");
 addCommand("runDelicious",        "run del.icio.us bookmarklet");
 addCommand("runRedditSubmit",     "run reddit submit bookmarklet");
+addCommand("runInstapaper",       "run instapaper bookmarklet");
 
 // An ordered listing of all available commands, grouped by type. This is the order they will
 // be shown in the help page.
@@ -173,5 +175,5 @@ var commandGroups = {
   tabManipulation:
     ["nextTab", "previousTab", "createTab", "removeTab", "restoreTab"],
   experimental:
-    ["runReadability", "runReadItLater", "runTumblr", "runDelicious", "runRedditSubmit"]
+    ["runReadability", "runReadItLater", "runTumblr", "runDelicious", "runRedditSubmit", "runInstapaper"]
 };
