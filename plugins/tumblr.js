@@ -13,6 +13,6 @@ function runTumblr() {
     chrome.extension.sendRequest({handler: "makePopup",
                                   url:     u,
                                   winName: 't',
-                                  options: 'toolbar=0,resizable=0,status=1,width=450,height=430',
+                                  options: 'toolbar=0,resizable=0,status=1,width=450,height=480',
                                 });
 }
