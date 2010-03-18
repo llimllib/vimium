@@ -26,6 +26,8 @@ var linkHintCss;
 // TODO(philc): This should be pulled from the extension's storage when the page loads.
 var currentZoomLevel = 100;
 
+var hasModifiersRegex = /^<([amc]-)+.>/;
+
 function getSetting(key) {
   if (!settingPort)
     settingPort = chrome.extension.connect({ name: "getSetting" });
@@ -244,14 +246,22 @@ function onKeydown(event) {
 
     if (keyChar != "") // Again, ignore just modifiers. Maybe this should replace the keyCode > 31 condition.
     {
+      var modifiers = [];
+
       if (event.shiftKey)
         keyChar = keyChar.toUpperCase();
-      else if (event.ctrlKey)
-        keyChar = "<c-" + keyChar + ">";
-      else if (event.metaKey)
-        keyChar = "<m-" + keyChar + ">";
-      else if (event.altKey)
-        keyChar = "<a-" + keyChar + ">";
+      if (event.metaKey)
+        modifiers.push("m");
+      if (event.ctrlKey)
+        modifiers.push("c");
+      if (event.altKey)
+        modifiers.push("a");
+
+      for (var i in modifiers)
+        keyChar = modifiers[i] + "-" + keyChar;
+
+      if (modifiers.length > 0)
+        keyChar = "<" + keyChar + ">";
     }
   }
 
