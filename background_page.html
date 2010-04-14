@@ -7,6 +7,7 @@
   var currentVersion = "1.16";
 
   var tabQueue = {}; // windowId -> Array
+  var openTabs = {}; // tabId -> object with various tab properties
   var keyQueue = ""; // Queue of keys typed
   var validFirstKeys = {};
   var singleKeyCommands = [];
@@ -38,8 +39,8 @@
       'border:1px solid #E3BE23;' +
       'z-index:99999999;' +
       'font-family:"Helvetica Neue", "Helvetica", "Arial", "Sans";' +
-      'top:0px;' +
-      'left:0px;' +
+      'top:-1px;' +
+      'left:-1px;' +
     '}' +
     '.internalVimiumHintMarker > .matchingCharacter {' +
       'color:#C79F0B;' +
@@ -62,6 +63,7 @@
     getLinkHintCss: getLinkHintCss,
     upgradeNotificationClosed: upgradeNotificationClosed,
     makePopup: handlePopup
+    updateScrollPosition: handleUpdateScrollPosition
   };
 
   // Event handlers
@@ -95,7 +97,7 @@
   chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
     var senderTabId = sender.tab ? sender.tab.id : null;
     if (sendRequestHandlers[request.handler])
-      sendResponse(sendRequestHandlers[request.handler](request));
+      sendResponse(sendRequestHandlers[request.handler](request, sender));
   });
 
   function handleReturnScrollPosition(args) {
@@ -269,14 +271,12 @@
       func(function() { repeatFunction(func, totalCount, currentCount + 1); });
   }
 
-  // Returns the currently selected tab along with scroll coordinates. Pass in a callback of the form:
+  // Returns the scroll coordinates of the given tab. Pass in a callback of the form:
   //   function(tab, scrollX, scrollY) { .. }
-  function getCurrentTabWithScrollPosition(callback) {
-    chrome.tabs.getSelected(null, function(tab) {
-      getScrollPositionHandlers[tab.id] = callback;
-      var scrollPort = chrome.tabs.connect(tab.id, { name: "getScrollPosition" });
-      scrollPort.postMessage({currentTab: tab});
-    });
+  function getScrollPosition(tab, callback) {
+    getScrollPositionHandlers[tab.id] = callback;
+    var scrollPort = chrome.tabs.connect(tab.id, { name: "getScrollPosition" });
+    scrollPort.postMessage({currentTab: tab});
   }
 
   // Start action functions
@@ -284,13 +284,13 @@
     chrome.tabs.create({}, function(tab) { callback(); });
   }
 
-  function nextTab() { selectTab("next"); }
-  function previousTab() { selectTab("previous"); }
+  function nextTab(callback) { selectTab(callback, "next"); }
+  function previousTab(callback) { selectTab(callback, "previous"); }
 
   /*
    * Selects a tab before or after the currently selected tab. Direction is either "next" or "previous".
    */
-  function selectTab(direction) {
+  function selectTab(callback, direction) {
     chrome.tabs.getAllInWindow(null, function(tabs) {
       if (tabs.length <= 1)
         return;
@@ -298,6 +298,7 @@
         if (tabs[i].selected) {
           var delta = (direction == "next") ? 1 : -1;
           var toSelect = tabs[(i + delta + tabs.length) % tabs.length];
+          selectionChangedHandlers.push(callback);
           chrome.tabs.update(toSelect.id, { selected: true });
           break;
         }
@@ -306,22 +307,77 @@
   }
 
   function removeTab(callback) {
-    getCurrentTabWithScrollPosition(function(tab, scrollX, scrollY) {
-      var tabQueueEntry = { tabUrl: tab.url,
-                            scrollX: scrollX,
-                            scrollY: scrollY };
-
-      if (tabQueue[tab.windowId])
-        tabQueue[tab.windowId].push(tabQueueEntry);
-      else
-        tabQueue[tab.windowId] = [tabQueueEntry];
-
+    chrome.tabs.getSelected(null, function(tab) {
       chrome.tabs.remove(tab.id);
       // We can't just call the callback here because we actually need to wait
       // for the selection to change to consider this action done.
       selectionChangedHandlers.push(callback);
     });
   }
+
+  function updateOpenTabs(tab) {
+    openTabs[tab.id] = { url: tab.url, positionIndex: tab.index, windowId: tab.windowId };
+  }
+
+  function handleUpdateScrollPosition(request, sender) {
+    updateScrollPosition(sender.tab, request.scrollX, request.scrollY);
+  }
+
+  function updateScrollPosition(tab, scrollX, scrollY) {
+    openTabs[tab.id].scrollX = scrollX;
+    openTabs[tab.id].scrollY = scrollY;
+  }
+  
+
+  chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
+    if (changeInfo.status != "loading") { return; } // only do this once per URL change
+    updateOpenTabs(tab);
+  });
+
+  chrome.tabs.onAttached.addListener(function(tabId, attachedInfo) {
+    // We should update all the tabs in the old window and the new window.
+    if (openTabs[tabId]) {
+      updatePositionsAndWindowsForAllTabsInWindow(openTabs[tabId].windowId);
+      updateTabQueueIndices(openTabs[tabId].windowId, openTabs[tabId].positionIndex);
+    }
+    updatePositionsAndWindowsForAllTabsInWindow(attachedInfo.newWindowId);
+  });
+
+  chrome.tabs.onMoved.addListener(function(tabId, moveInfo) {
+    updatePositionsAndWindowsForAllTabsInWindow(moveInfo.windowId);
+  });
+
+  function updateTabQueueIndices(windowId, positionIndex) {
+    for (var i in tabQueue[windowId]) {
+      if (tabQueue[windowId][i].positionIndex > positionIndex) {
+        tabQueue[windowId][i].positionIndex--;
+      }
+    }
+  }
+
+  chrome.tabs.onRemoved.addListener(function(tabId) {
+    var openTabInfo = openTabs[tabId];
+    updatePositionsAndWindowsForAllTabsInWindow(openTabInfo.windowId);
+
+    // If we restore chrome:// pages, they'll ignore Vimium keystrokes when they reappear.
+    // Pretend they never existed and adjust tab indices accordingly.
+    // Could possibly expand this into a blacklist in the future
+    if (/^chrome[^:]*:\/\/.*/.test(openTabInfo.url)) {
+      updateTabQueueIndices(openTabInfo.windowId, openTabInfo.positionIndex);
+      return;
+    }
+
+    if (tabQueue[openTabInfo.windowId])
+      tabQueue[openTabInfo.windowId].push(openTabInfo);
+    else
+      tabQueue[openTabInfo.windowId] = [openTabInfo];
+
+    delete openTabs[tabId];
+  });
+
+  chrome.windows.onRemoved.addListener(function(windowId) {
+    delete tabQueue[windowId];
+  });
 
   function restoreTab(callback) {
     // TODO(ilya): Should this be getLastFocused instead?
@@ -337,7 +393,7 @@
         // We have to chain a few callbacks to set the appropriate scroll position. We can't just wait until the
         // tab is created because the content script is not available during the "loading" state. We need to
         // wait until that's over before we can call setScrollPosition.
-        chrome.tabs.create({ url: tabQueueEntry.tabUrl }, function(tab) {
+        chrome.tabs.create({ url: tabQueueEntry.url, index: tabQueueEntry.positionIndex }, function(tab) {
           tabLoadedHandlers[tab.id] = function() {
             var scrollPort = chrome.tabs.connect(tab.id, {name: "setScrollPosition"});
             scrollPort.postMessage({ scrollX: tabQueueEntry.scrollX, scrollY: tabQueueEntry.scrollY });
@@ -349,6 +405,19 @@
     });
   }
   // End action functions
+
+  function updatePositionsAndWindowsForAllTabsInWindow(windowId) {
+    chrome.tabs.getAllInWindow(windowId, function (tabs) {
+      for (var i = 0; i < tabs.length; i++) {
+        var tab = tabs[i];
+        var openTabInfo = openTabs[tab.id];
+        if (openTabInfo) {
+          openTabInfo.positionIndex = tab.index;
+          openTabInfo.windowId = tab.windowId;
+        }
+      }
+    });
+  }
 
   function splitKeyIntoFirstAndSecond(key) {
     if (key.search(hasModifierRegex) == 0)
@@ -541,6 +610,21 @@
     populateSingleKeyCommands();
     if (shouldShowUpgradeMessage())
       sendRequestToAllTabs({ name: "showUpgradeNotification", version: currentVersion });
+
+    // Ensure that openTabs is populated when Vimium is installed.
+    chrome.windows.getAll({ populate: true }, function(windows) {
+      for (var i in windows) {
+        for (var j in windows[i].tabs) {
+          var tab = windows[i].tabs[j];
+          updateOpenTabs(tab);
+          getScrollPosition(tab, function(tab, scrollX, scrollY) {
+            // Not using the tab defined in the for loop because
+            // it might have changed by the time this callback is activated.
+            updateScrollPosition(tab, scrollX, scrollY);
+          });
+        }
+      }
+    });
   }
   init();
 </script>
