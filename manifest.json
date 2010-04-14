@@ -22,19 +22,6 @@
              "plugins/instapaper.js"
             ],
       "run_at": "document_start"
-    }, {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["vimiumFrontend.js",
-             "lib/keyboardUtils.js",
-             "lib/clipboard.js",
-             "linkHints.js",
-             "plugins/readability.js",
-             "plugins/readitlater.js",
-             "plugins/delicious.js",
-             "plugins/tumblr.js",
-             "plugins/reddit.js",
-             "plugins/instapaper.js"
-            ]
     }
   ]
 }
