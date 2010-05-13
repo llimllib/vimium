@@ -16,9 +16,18 @@ var shouldOpenLinkHintInNewTab = false;
 // Whether we have added to the page the CSS needed to display link hints.
 var linkHintsCssAdded = false;
 
-// An XPath describing what a clickable element is. We could also look for images with an onclick
-// attribute, but let's wait to see if that really is necessary.
-var clickableElementsXPath = "//a | //textarea | //button | //select | //input[not(@type='hidden')] | //*[@onclick]";
+/* 
+ * Generate an XPath describing what a clickable element is.
+ * The final expression will be something like "//button | //xhtml:button | ..."
+ */
+var clickableElementsXPath = (function() {
+  var clickableElements = ["a", "textarea", "button", "select", "input[not(@type='hidden')]"];
+  var xpath = [];
+  for (var i in clickableElements)
+    xpath.push("//" + clickableElements[i], "//xhtml:" + clickableElements[i]);
+  xpath.push("//*[@onclick]");
+  return xpath.join(" | ")
+})();
 
 // We need this as a top-level function because our command system doesn't yet support arguments.
 function activateLinkHintsModeToOpenInNewTab() { activateLinkHintsMode(true); }
@@ -66,74 +75,82 @@ function logXOfBase(x, base) { return Math.log(x) / Math.log(base); }
  * of digits needed to enumerate all of the links on screen.
  */
 function getVisibleClickableElements() {
-  var resultSet = document.evaluate(clickableElementsXPath, document.body, null,
+  var resultSet = document.evaluate(clickableElementsXPath, document.body,
+    function (namespace) {
+      return namespace == "xhtml" ? "http://www.w3.org/1999/xhtml" : null;
+    },
     XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+
   var visibleElements = [];
 
-  // Prune all invisible clickable elements.
+  // Find all visible clickable elements.
   for (var i = 0; i < resultSet.snapshotLength; i++) {
     var element = resultSet.snapshotItem(i);
-
-    // Note that getBoundingClientRect() is relative to the viewport
     var boundingRect = element.getBoundingClientRect();
-    // Exclude links which have just a few pixels on screen, because the link hints won't show for them anyway.
-    if (boundingRect.bottom <= 4 || boundingRect.top >= window.innerHeight - 4 ||
-        boundingRect.left <= 0 || boundingRect.right >= window.innerWidth - 4)
-      continue;
 
-    if (boundingRect.width < 3 || boundingRect.height < 3)
-      continue;
+    if (isVisible(element, boundingRect))
+      visibleElements.push(element);
 
-    // Using getElementFromPoint will omit elements which have visibility=hidden or display=none, and
-    // elements inside of containers that are also hidden. We're checking for whether the element occupies
-    // the upper left corner and if that fails, we also check whether the element occupies the center of the
-    // box. We use the center of the box because it's more accurate when inline links have vertical padding,
-    // like in the links ("Source", "Commits") at the top of github.com.
-    // This will not exclude links with "opacity=0", like the links on Google's homepage (see bug #16).
-    // Note(philc): this is the most expensive part our link hinting process, so we should try hard to filter
-    // out elements by whatever means possible prior to getting to this check.
-    if (!elementOccupiesPoint(element, boundingRect.left, boundingRect.top)) {
-      var elementOccupiesCenter = elementOccupiesPoint(element, boundingRect.left + boundingRect.width / 2,
-          boundingRect.top + boundingRect.height / 2);
-      if (!elementOccupiesCenter)
-        continue;
+    // If the link has zero dimensions, it may be wrapping visible
+    // but floated elements. Check for this.
+    if (boundingRect.width == 0 || boundingRect.height == 0) {
+      for (var j = 0; j < element.childNodes.length; j++) {
+
+        // check that the node is an element node
+        if (element.childNodes[j].nodeType != 1) // nodeType 1: ELEMENT_NODE
+          continue;
+
+        if (window.getComputedStyle(element.childNodes[j], null).getPropertyValue('float') != 'none'
+            && isVisible(element.childNodes[j])) {
+          visibleElements.push(element.childNodes[j]);
+          break;
+        }
+
+      }
     }
-
-    visibleElements.push(element);
   }
   return visibleElements;
 }
 
 /*
- * Checks whether the clickable element or one of its descendents is at the given point. We must check
- * descendents because some clickable elements like "<a>" can have many nested children.
+ * Returns true if element is visible.
+ * boundingRect is an optional argument.
  */
-function elementOccupiesPoint(clickableElement, x, y) {
-  var elementAtPoint = getElementFromPoint(x, y);
-  // Recurse up to 5 parents.
-  for (var i = 0; i < 5 && elementAtPoint; i++) {
-    if (elementAtPoint == clickableElement)
-      return true;
-    elementAtPoint = elementAtPoint.parentNode;
-  }
-  return false;
-}
-/*
- * Returns the element at the given point and factors in the page's CSS zoom level, which Webkit neglects
- * to do. This should become unnecessary when webkit fixes their bug.
- */
-function getElementFromPoint(x, y) {
+function isVisible(element, boundingRect) {
+  // Note that getBoundingClientRect() is relative to the viewport
+  if (boundingRect === undefined)
+    boundingRect = element.getBoundingClientRect();
+
+  // Exclude links which have just a few pixels on screen, because the link hints won't show for them anyway.
   var zoomFactor = currentZoomLevel / 100.0;
-  return document.elementFromPoint(Math.ceil(x * zoomFactor), Math.ceil(y * zoomFactor));
+  if (boundingRect.bottom <= 4 || boundingRect.top * zoomFactor >= window.innerHeight - 4 ||
+      boundingRect.left <= 0 || boundingRect.left * zoomFactor >= window.innerWidth - 4)
+    return false;
+
+  if (boundingRect.width < 3 || boundingRect.height < 3)
+    return false;
+
+  // eliminate invisible elements (see test_harnesses/visibility_test.html)
+  var computedStyle = window.getComputedStyle(element, null);
+  if (computedStyle.getPropertyValue('visibility') != 'visible' ||
+      computedStyle.getPropertyValue('display') == 'none')
+    return false;
+
+  var clientRect = element.getClientRects()[0];
+  if (!clientRect)
+    return false;
+
+  return true;
 }
 
 function onKeyDownInLinkHintsMode(event) {
-  var keyChar = String.fromCharCode(event.keyCode).toLowerCase();
+  var keyChar = getKeyChar(event);
   if (!keyChar)
     return;
 
   // TODO(philc): Ignore keys that have modifiers.
-  if (event.keyCode == keyCodes.ESC) {
+  if (isEscape(event)) {
     deactivateLinkHintsMode();
   } else if (event.keyCode == keyCodes.backspace || event.keyCode == keyCodes.deleteKey) {
     if (hintKeystrokeQueue.length == 0) {
@@ -271,12 +288,12 @@ function createMarkerFor(link, linkHintNumber, linkHintDigits) {
   marker.setAttribute("hintString", hintString);
 
   // Note: this call will be expensive if we modify the DOM in between calls.
-  var boundingRect = link.getBoundingClientRect();
+  var clientRect = link.getClientRects()[0];
   // The coordinates given by the window do not have the zoom factor included since the zoom is set only on
   // the document node.
   var zoomFactor = currentZoomLevel / 100.0;
-  marker.style.left = boundingRect.left + window.scrollX / zoomFactor + "px";
-  marker.style.top = boundingRect.top  + window.scrollY / zoomFactor + "px";
+  marker.style.left = clientRect.left + window.scrollX / zoomFactor + "px";
+  marker.style.top = clientRect.top  + window.scrollY / zoomFactor + "px";
 
   marker.clickableItem = link;
   return marker;

@@ -85,9 +85,11 @@ include a change to the CREDITS file with your patch.
 Release Notes
 -------------
 
-1.17 (Unreleased)
+1.17 (04/18/2010)
 
 -  'u' now restores tabs that were closed by the mouse or with native shortcuts. Tabs are also restored in their prior position.
+-  New 'unmapAll' command in the key mappings interface to remove all default mappings.
+-  Link hints are now faster and more reliable.
 -  Bug fixes.
 
 1.16 (03/09/2010)
