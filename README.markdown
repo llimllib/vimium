@@ -44,7 +44,8 @@ Navigating the current page:
     n       cycle forward to the next find match
     N       cycle backward to the previous find match
     i       enter insert mode -- all commands will be ignored until you hit esc to exit
-    y       copy the current url to the clipboard
+    yy      copy the current url to the clipboard
+    gu      go up one level in the URL hierarchy
 
 Navigating your history:
     H       go back in history
@@ -78,12 +79,26 @@ Editing the exclusion list
 Contributing
 ------------
 
-Send us a pull request on Github with some explanation. If the patch adds new behavior or functionality,
-please let us know whether it mirrors a similar extension for another browser or Vim itself. Feel free to
-include a change to the CREDITS file with your patch.
+You'd like to fix a bug or implement a feature? Great! Check out the bugs on our issues tracker, or implement one of
+the suggestions there that have been tagged 'todo'. If you have a suggestion of your own, start a discussion on
+the issues tracker or on the [mailing list][list_url]. If it mirrors a similar feature in another browser or in Vim
+itself, let us know! Once you've picked something to work on, add a comment to the respective issue so others don't
+duplicate your effort.
+
+When you're done, send us a pull request on Github. Feel free to include a change to the CREDITS file with your patch.
+
+[list_url]: http://groups.google.com/group/vimium-dev?hl=en
 
 Release Notes
 -------------
+
+1.18 (06/22/2010)
+
+-  Vimium now runs on pages with file:/// and ftp:///
+-  The Options page is now linked from the Help dialog.
+-  Arrow keys and function keys can now be mapped using &lt;left&gt;, &lt;right&gt;, &lt;up&gt;, &lt;down&gt;, &lt;f1&gt;, &lt;f2&gt;, etc. in the mappings interface.
+-  There is a new command `goUp` (mapped to `gu` by default) that will go up one level in the URL hierarchy. For example: from http://vimium.github.com/foo/bar to http://vimium.github.com/foo. At the moment, `goUp` does not support command repetition.
+-  Bug fixes and optimizations.
 
 1.17 (04/18/2010)
 

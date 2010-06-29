@@ -200,6 +200,19 @@ function reload() { window.location.reload(); }
 function goBack() { history.back(); }
 function goForward() { history.forward(); }
 
+function goUp() {
+  var url = window.location.href;
+  if (url[url.length-1] == '/')
+    url = url.substring(0, url.length - 1);
+
+  var urlsplit = url.split('/');
+  // make sure we haven't hit the base domain yet
+  if (urlsplit.length > 3) {
+    delete urlsplit[urlsplit.length-1];
+    window.location.href = urlsplit.join('/');
+  }
+}
+
 function toggleViewSource() {
   getCurrentUrlHandlers.push(toggleViewSourceCallback);
 
@@ -263,7 +276,7 @@ function onKeydown(event) {
       for (var i in modifiers)
         keyChar = modifiers[i] + "-" + keyChar;
 
-      if (modifiers.length > 0)
+      if (modifiers.length > 0 || keyChar.length > 1)
         keyChar = "<" + keyChar + ">";
     }
   }
@@ -462,6 +475,9 @@ function showHelpDialog(html) {
   container.id = "vimiumHelpDialogContainer";
   container.innerHTML = html;
   container.getElementsByClassName("closeButton")[0].addEventListener("click", hideHelpDialog, false);
+  container.getElementsByClassName("optionsPage")[0].addEventListener("click",
+      function() { chrome.extension.sendRequest({ handler: "openOptionsPageInNewTab" }); }, false);
+
   document.body.appendChild(container);
   var dialog = document.getElementById("vimiumHelpDialog");
   dialog.style.zIndex = "99999998";
@@ -682,5 +698,6 @@ if (!isIframe) {
 }
 
 window.onbeforeunload = function() {
-  chrome.extension.sendRequest({ handler: 'updateScrollPosition', scrollX: window.scrollX, scrollY: window.scrollY });
+  chrome.extension.sendRequest({ handler: "updateScrollPosition",
+      scrollX: window.scrollX, scrollY: window.scrollY });
 }

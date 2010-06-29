@@ -23,18 +23,34 @@ function mapKeyToCommand(key, command) {
 
 function unmapKey(key) { delete keyToCommandRegistry[key]; }
 
+/* Lower-case the appropriate portions of named keys.
+ *
+ * A key name is one of three forms exemplified by <c-a> <left> or <c-f12>
+ * (prefixed normal key, named key, or prefixed named key). Internally, for
+ * simplicity, we would like prefixes and key names to be lowercase, though
+ * humans may prefer other forms <Left> or <C-a>.
+ * On the other hand, <c-a> and <c-A> are different named keys - for one of
+ * them you have to press "shift" as well.
+ */
+function normalizeKey(key) {
+    return key.replace(/<[acm]-/ig, function(match){ return match.toLowerCase(); })
+              .replace(/<([acm]-)?([a-zA-Z0-9]{2,5})>/g, function(match, optionalPrefix, keyName){
+                  return "<" + ( optionalPrefix ? optionalPrefix : "") + keyName.toLowerCase() + ">";
+              });
+}
+
 function parseCustomKeyMappings(customKeyMappings) {
   lines = customKeyMappings.split("\n");
 
   for (var i = 0; i < lines.length; i++) {
     if (lines[i][0] == "\"" || lines[i][0] == "#") { continue }
-    split_line = lines[i].split(" "); // TODO(ilya): Support all whitespace.
+    split_line = lines[i].split(/\s+/);
 
     var lineCommand = split_line[0];
 
     if (lineCommand == "map") {
       if (split_line.length != 3) { continue; }
-      var key = split_line[1];
+      var key = normalizeKey(split_line[1]);
       var vimiumCommand = split_line[2];
 
       if (!availableCommands[vimiumCommand]) { continue }
@@ -45,7 +61,7 @@ function parseCustomKeyMappings(customKeyMappings) {
     else if (lineCommand == "unmap") {
       if (split_line.length != 2) { continue; }
 
-      var key = split_line[1];
+      var key = normalizeKey(split_line[1]);
 
       console.log("Unmapping", key);
       unmapKey(key);
@@ -88,6 +104,7 @@ function clearKeyMappingsAndSetDefaults() {
 
   mapKeyToCommand('H', 'goBack');
   mapKeyToCommand('L', 'goForward');
+  mapKeyToCommand('gu', 'goUp');
 
   mapKeyToCommand('zi', 'zoomIn');
   mapKeyToCommand('zo', 'zoomOut');
@@ -151,6 +168,9 @@ addCommand('performBackwardsFind', 'Cycle backward to the previous find match');
 addCommand('goBack',              'Go back in history');
 addCommand('goForward',           'Go forward in history');
 
+// Navigating the URL hierarchy
+addCommand('goUp',                'Go up the URL hierarchy');
+
 // Manipulating tabs:
 addCommand('nextTab',             'Go one tab right',  true);
 addCommand('previousTab',         'Go one tab left',   true);
@@ -172,7 +192,7 @@ var commandGroups = {
   pageNavigation:
     ["scrollDown", "scrollUp", "scrollLeft", "scrollRight",
      "scrollToTop", "scrollToBottom", "scrollPageDown", "scrollPageUp", "scrollFullPageDown",
-     "reload", "toggleViewSource", "zoomIn", "zoomOut", "copyCurrentUrl",
+     "reload", "toggleViewSource", "zoomIn", "zoomOut", "copyCurrentUrl", "goUp",
      "enterInsertMode", "activateLinkHintsMode", "activateLinkHintsModeToOpenInNewTab",
      "enterFindMode", "performFind", "performBackwardsFind"],
   historyNavigation:
