@@ -92,6 +92,15 @@ When you're done, send us a pull request on Github. Feel free to include a chang
 Release Notes
 -------------
 
+1.20 (Unreleased)
+
+-  In link hints mode, holding down the shift key will now toggle between opening in the current tab and opening in a new tab.
+
+1.19 (06/29/2010)
+
+-  A critical bug fix for development channel Chromium.
+-  Vimium icons for the Chrome extensions panel and other places.
+
 1.18 (06/22/2010)
 
 -  Vimium now runs on pages with file:/// and ftp:///
