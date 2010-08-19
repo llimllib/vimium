@@ -75,8 +75,6 @@ function parseCustomKeyMappings(customKeyMappings) {
       if (localStorage["excludedUrls"].indexOf(key) < 0) {
         console.log("exculding", key, localStorage["excludedUrls"]);
         localStorage["excludedUrls"] += key + "\n";
-      } else {
-        console.log("found url", key);
       }
     }
     else if (lineCommand == "unmapAll") {
