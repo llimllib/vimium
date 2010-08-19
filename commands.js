@@ -69,10 +69,14 @@ function parseCustomKeyMappings(customKeyMappings) {
     else if (lineCommand == "exclude") {
       if (localStorage["excludedUrls"] === undefined)
         localStorage["excludedUrls"] = "";
+      
+      var key = split_line[1];
 
       if (localStorage["excludedUrls"].indexOf(key) < 0) {
         console.log("exculding", key, localStorage["excludedUrls"]);
         localStorage["excludedUrls"] += key + "\n";
+      } else {
+        console.log("found url", key);
       }
     }
     else if (lineCommand == "unmapAll") {
