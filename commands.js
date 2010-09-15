@@ -1,14 +1,17 @@
 var availableCommands    = {};
 var keyToCommandRegistry = {};
 
-function addCommand(command, description, isBackgroundCommand) {
+function addCommand(command, description, isBackgroundCommand, passCountToFunction) {
   if (availableCommands[command])
   {
     console.log(command, "is already defined! Check commands.js for duplicates.");
     return;
   }
 
-  availableCommands[command] = { description: description, isBackgroundCommand: isBackgroundCommand };
+  availableCommands[command] = { description: description,
+                                 isBackgroundCommand: isBackgroundCommand,
+                                 passCountToFunction: passCountToFunction
+                               };
 }
 
 function mapKeyToCommand(key, command) {
@@ -18,7 +21,10 @@ function mapKeyToCommand(key, command) {
     return;
   }
 
-  keyToCommandRegistry[key] = { command: command, isBackgroundCommand: availableCommands[command].isBackgroundCommand };
+  keyToCommandRegistry[key] = { command: command,
+                                isBackgroundCommand: availableCommands[command].isBackgroundCommand,
+                                passCountToFunction: availableCommands[command].passCountToFunction
+                              };
 }
 
 function unmapKey(key) { delete keyToCommandRegistry[key]; }
@@ -93,6 +99,8 @@ function clearKeyMappingsAndSetDefaults() {
   mapKeyToCommand('l', 'scrollRight');
   mapKeyToCommand('gg', 'scrollToTop');
   mapKeyToCommand('G', 'scrollToBottom');
+  mapKeyToCommand('zH', 'scrollToLeft');
+  mapKeyToCommand('zL', 'scrollToRight');
   mapKeyToCommand('<c-e>', 'scrollDown');
   mapKeyToCommand('<c-y>', 'scrollUp');
   mapKeyToCommand('<c-d>', 'scrollPageDown');
@@ -110,6 +118,8 @@ function clearKeyMappingsAndSetDefaults() {
 
   mapKeyToCommand('zi', 'zoomIn');
   mapKeyToCommand('zo', 'zoomOut');
+
+  mapKeyToCommand('gi', 'focusInput');
 
   mapKeyToCommand('f', 'activateLinkHintsMode');
   mapKeyToCommand('F', 'activateLinkHintsModeToOpenInNewTab');
@@ -146,6 +156,8 @@ addCommand('scrollLeft',          'Scroll left');
 addCommand('scrollRight',         'Scroll right');
 addCommand('scrollToTop',         'Scroll to the top of the page');
 addCommand('scrollToBottom',      'Scroll to the bottom of the page');
+addCommand('scrollToLeft',        'Scroll to the left of the page');
+addCommand('scrollToRight',       'Scroll to the right of the page');
 addCommand('scrollPageDown',      'Scroll a page down');
 addCommand('scrollPageUp',        'Scroll a page up');
 addCommand('scrollFullPageDown',  'Scroll a full page down');
@@ -158,6 +170,8 @@ addCommand('zoomOut',             'Zoom out');
 addCommand('copyCurrentUrl',      'Copy the current URL to the clipboard');
 
 addCommand('enterInsertMode',     'Enter insert mode');
+
+addCommand('focusInput',          'Focus the first (or n-th) text box on the page', false, true);
 
 addCommand('activateLinkHintsMode',               'Enter link hints mode to open links in current tab');
 addCommand('activateLinkHintsModeToOpenInNewTab', 'Enter link hints mode to open links in new tab');
@@ -193,9 +207,11 @@ addCommand("runInstapaper",       "run instapaper bookmarklet");
 var commandGroups = {
   pageNavigation:
     ["scrollDown", "scrollUp", "scrollLeft", "scrollRight",
-     "scrollToTop", "scrollToBottom", "scrollPageDown", "scrollPageUp", "scrollFullPageDown",
+     "scrollToTop", "scrollToBottom", "scrollToLeft", "scrollToRight", "scrollPageDown",
+     "scrollPageUp", "scrollFullPageDown",
      "reload", "toggleViewSource", "zoomIn", "zoomOut", "copyCurrentUrl", "goUp",
-     "enterInsertMode", "activateLinkHintsMode", "activateLinkHintsModeToOpenInNewTab",
+     "enterInsertMode", "focusInput",
+     "activateLinkHintsMode", "activateLinkHintsModeToOpenInNewTab",
      "enterFindMode", "performFind", "performBackwardsFind"],
   historyNavigation:
     ["goBack", "goForward"],

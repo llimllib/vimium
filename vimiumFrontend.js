@@ -76,7 +76,11 @@ function initializePreDomReady() {
     if (port.name == "executePageCommand") {
       port.onMessage.addListener(function(args) {
         if (this[args.command]) {
-          for (var i = 0; i < args.count; i++) { this[args.command].call(); }
+          if (args.passCountToFunction) {
+            this[args.command].call(null, args.count);
+          } else {
+            for (var i = 0; i < args.count; i++) { this[args.command].call(); }
+          }
         }
 
         refreshCompletionKeys(args.completionKeys);
@@ -187,6 +191,8 @@ function zoomOut() {
 
 function scrollToBottom() { window.scrollTo(window.pageXOffset, document.body.scrollHeight); }
 function scrollToTop() { window.scrollTo(window.pageXOffset, 0); }
+function scrollToLeft() { window.scrollTo(0, window.pageYOffset); }
+function scrollToRight() { window.scrollTo(document.body.scrollWidth, window.pageYOffset); }
 function scrollUp() { window.scrollBy(0, -1 * settings["scrollStepSize"]); }
 function scrollDown() { window.scrollBy(0, settings["scrollStepSize"]); }
 function scrollPageUp() { window.scrollBy(0, -1 * window.innerHeight / 2); }
@@ -195,6 +201,26 @@ function scrollFullPageUp() { window.scrollBy(0, -window.innerHeight); }
 function scrollFullPageDown() { window.scrollBy(0, window.innerHeight); }
 function scrollLeft() { window.scrollBy(-1 * settings["scrollStepSize"], 0); }
 function scrollRight() { window.scrollBy(settings["scrollStepSize"], 0); }
+
+function focusInput(count) {
+  var xpath = '//input[@type="text" or @type="search"]';
+  var results = document.evaluate(xpath, document.documentElement, null,
+                                  XPathResult.ORDERED_NODE_ITERATOR_TYPE, null);
+
+  var lastInputBox;
+  var i = 0;
+
+  while (i < count) {
+    i += 1;
+
+    var currentInputBox = results.iterateNext();
+    if (!currentInputBox) { break; }
+
+    lastInputBox = currentInputBox;
+  }
+
+  if (lastInputBox) { lastInputBox.focus(); }
+}
 
 function reload() { window.location.reload(); }
 function goBack() { history.back(); }
