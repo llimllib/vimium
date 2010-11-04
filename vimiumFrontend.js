@@ -26,6 +26,11 @@ var linkHintCss;
 // TODO(philc): This should be pulled from the extension's storage when the page loads.
 var currentZoomLevel = 100;
 
+/*
+ * Give this frame a unique id.
+ */
+frameId = Math.floor(Math.random()*999999999)
+
 var hasModifiersRegex = /^<([amc]-)+.>/;
 
 function getSetting(key) {
@@ -42,8 +47,7 @@ function setSetting(args) { settings[args.key] = args.value; }
 function initializePreDomReady() {
   for (var i in settingsToLoad) { getSetting(settingsToLoad[i]); }
 
-  var isEnabledForUrlPort = chrome.extension.connect({ name: "isEnabledForUrl" });
-  isEnabledForUrlPort.postMessage({ url: window.location.toString() });
+  checkIfEnabledForUrl();
 
   var getZoomLevelPort = chrome.extension.connect({ name: "getZoomLevel" });
   getZoomLevelPort.postMessage({ domain: window.location.host });
@@ -66,7 +70,10 @@ function initializePreDomReady() {
       if (isShowingHelpDialog)
         hideHelpDialog();
       else
-        showHelpDialog(request.dialogHtml);
+        showHelpDialog(request.dialogHtml, request.frameId);
+    else if (request.name == "focusFrame")
+      if(frameId == request.frameId)
+        focusThisFrame(request.highlight);
     else if (request.name == "refreshCompletionKeys")
       refreshCompletionKeys(request.completionKeys);
     sendResponse({}); // Free up the resources used by this open connection.
@@ -75,7 +82,7 @@ function initializePreDomReady() {
   chrome.extension.onConnect.addListener(function(port, name) {
     if (port.name == "executePageCommand") {
       port.onMessage.addListener(function(args) {
-        if (this[args.command]) {
+        if (this[args.command] && frameId == args.frameId) {
           if (args.passCountToFunction) {
             this[args.command].call(null, args.count);
           } else {
@@ -109,15 +116,6 @@ function initializePreDomReady() {
         if (isEnabledForUrl)
           setPageZoomLevel(currentZoomLevel);
       });
-    } else if (port.name == "returnIsEnabledForUrl") {
-      port.onMessage.addListener(function(args) {
-        isEnabledForUrl = args.isEnabledForUrl;
-        if (isEnabledForUrl)
-          initializeWhenEnabled();
-        else if (HUD.isReady())
-          // Quickly hide any HUD we might already be showing, e.g. if we entered insertMode on page load.
-          HUD.hide();
-      });
     } else if (port.name == "returnSetting") {
       port.onMessage.addListener(setSetting);
     } else if (port.name == "refreshCompletionKeys") {
@@ -133,21 +131,52 @@ function initializePreDomReady() {
  */
 function initializeWhenEnabled() {
   document.addEventListener("keydown", onKeydown, true);
+  document.addEventListener("keypress", onKeypress, true);
   document.addEventListener("focus", onFocusCapturePhase, true);
   document.addEventListener("blur", onBlurCapturePhase, true);
   enterInsertModeIfElementIsFocused();
+}
+
+
+/*
+ * The backend needs to know which frame has focus.
+ */
+window.addEventListener("focus", function(e){
+  chrome.extension.sendRequest({handler: "frameFocused", frameId: frameId});
+});
+
+/*
+ * Called from the backend in order to change frame focus.
+ */
+function focusThisFrame(shouldHighlight) {
+  window.focus();
+  if (document.body && shouldHighlight) {
+    var borderWas = document.body.style.border;
+    document.body.style.border = '5px solid yellow';
+    setTimeout(function(){document.body.style.border = borderWas}, 200);
+  }
 }
 
 /*
  * Initialization tasks that must wait for the document to be ready.
  */
 function initializeOnDomReady() {
+  registerFrameIfSizeAvailable(window.top == window.self);
+
   if (isEnabledForUrl)
     enterInsertModeIfElementIsFocused();
 
   // Tell the background page we're in the dom ready state.
   chrome.extension.connect({ name: "domReady" });
 };
+
+// This is a little hacky but sometimes the size wasn't available on domReady?
+function registerFrameIfSizeAvailable (top) {
+  if (innerWidth != undefined && innerWidth != 0 && innerHeight != undefined && innerHeight != 0)
+    chrome.extension.sendRequest({ handler: "registerFrame", frameId: frameId, area: innerWidth * innerHeight, top: top, total: frames.length + 1 });
+  else
+    setTimeout(function () { registerFrameIfSizeAvailable(top); }, 100);
+}
 
 /*
  * Checks the currently focused element of the document and will enter insert mode if that element is focusable.
@@ -247,7 +276,11 @@ function toggleViewSource() {
 }
 
 function copyCurrentUrl() {
-  getCurrentUrlHandlers.push(function (url) { Clipboard.copy(url); });
+  // TODO(ilya): When the following bug is fixed, revisit this approach of sending back to the background page
+  // to copy.
+  // http://code.google.com/p/chromium/issues/detail?id=55188
+  //getCurrentUrlHandlers.push(function (url) { Clipboard.copy(url); });
+  getCurrentUrlHandlers.push(function (url) { chrome.extension.sendRequest({ handler: "copyToClipboard", data: url }); });
 
   // TODO(ilya): Convert to sendRequest.
   var getCurrentUrlPort = chrome.extension.connect({ name: "getCurrentTabUrl" });
@@ -257,9 +290,10 @@ function copyCurrentUrl() {
 function toggleViewSourceCallback(url) {
   if (url.substr(0, 12) == "view-source:")
   {
-    window.location.href = url.substr(12, url.length - 12);
+    url = url.substr(12, url.length - 12);
   }
-  else { window.location.href = "view-source:" + url; }
+  else { url = "view-source:" + url; }
+  chrome.extension.sendRequest({handler: "openUrlInCurrentTab", url:url});
 }
 
 /**
@@ -269,7 +303,7 @@ function toggleViewSourceCallback(url) {
  *
  * Note that some keys will only register keydown events and not keystroke events, e.g. ESC.
  */
-function onKeydown(event) {
+function onKeypress(event) {
   var keyChar = "";
 
   if (linkHintsModeActivated)
@@ -277,33 +311,61 @@ function onKeydown(event) {
 
   // Ignore modifier keys by themselves.
   if (event.keyCode > 31) {
-    keyChar = getKeyChar(event);
+    keyChar = String.fromCharCode(event.charCode);
 
     // Enter insert mode when the user enables the native find interface.
-    if (keyChar == "f" && !event.shiftKey && isPrimaryModifierKey(event))
-    {
+    if (keyChar == "f" && isPrimaryModifierKey(event)) {
       enterInsertMode();
       return;
     }
+
+    if (keyChar) {
+      if (findMode) {
+        handleKeyCharForFindMode(keyChar);
+
+        // Don't let the space scroll us if we're searching.
+        if (event.keyCode == keyCodes.space)
+          event.preventDefault();
+      } else if (!insertMode && !findMode) {
+        if (currentCompletionKeys.indexOf(keyChar) != -1) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+
+        keyPort.postMessage({keyChar:keyChar, frameId:frameId});
+      }
+    }
+  }
+}
+
+function onKeydown(event) {
+  var keyChar = "";
+
+  if (linkHintsModeActivated)
+    return;
+
+  // handle modifiers being pressed.don't handle shiftKey alone (to avoid / being interpreted as ?
+  if (event.metaKey && event.keyCode > 31 || event.ctrlKey && event.keyCode > 31 || event.altKey && event.keyCode > 31) {
+    keyChar = getKeyChar(event);
 
     if (keyChar != "") // Again, ignore just modifiers. Maybe this should replace the keyCode > 31 condition.
     {
       var modifiers = [];
 
       if (event.shiftKey)
-        keyChar = keyChar.toUpperCase();
+          keyChar = keyChar.toUpperCase();
       if (event.metaKey)
-        modifiers.push("m");
+          modifiers.push("m");
       if (event.ctrlKey)
-        modifiers.push("c");
+          modifiers.push("c");
       if (event.altKey)
-        modifiers.push("a");
+          modifiers.push("a");
 
       for (var i in modifiers)
-        keyChar = modifiers[i] + "-" + keyChar;
+          keyChar = modifiers[i] + "-" + keyChar;
 
       if (modifiers.length > 0 || keyChar.length > 1)
-        keyChar = "<" + keyChar + ">";
+          keyChar = "<" + keyChar + ">";
     }
   }
 
@@ -314,20 +376,16 @@ function onKeydown(event) {
       // Remove focus so the user can't just get himself back into insert mode by typing in the same input box.
       if (isEditable(event.srcElement)) { event.srcElement.blur(); }
       exitInsertMode();
+
+      // Added to prevent Google Instant from reclaiming the keystroke and putting us back into the search box.
+      // TOOD(ilya): Revisit this. Not sure it's the absolute best approach.
+      event.stopPropagation();
     }
   }
   else if (findMode)
   {
     if (isEscape(event))
       exitFindMode();
-    else if (keyChar)
-    {
-      handleKeyCharForFindMode(keyChar);
-
-      // Don't let the space scroll us if we're searching.
-      if (event.keyCode == keyCodes.space)
-        event.preventDefault();
-    }
     // Don't let backspace take us back in history.
     else if (event.keyCode == keyCodes.backspace || event.keyCode == keyCodes.deleteKey)
     {
@@ -343,17 +401,40 @@ function onKeydown(event) {
   }
   else if (!insertMode && !findMode) {
     if (keyChar) {
-      if (currentCompletionKeys.indexOf(keyChar) != -1) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
+        if (currentCompletionKeys.indexOf(keyChar) != -1) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
 
-      keyPort.postMessage(keyChar);
+        keyPort.postMessage({keyChar:keyChar, frameId:frameId});
     }
     else if (isEscape(event)) {
-      keyPort.postMessage("<ESC>");
+      keyPort.postMessage({keyChar:"<ESC>", frameId:frameId});
     }
   }
+
+  // Added to prevent propagating this event to other listeners if it's one that'll trigger a Vimium command.
+  // The goal is to avoid the scenario where Google Instant Search uses every keydown event to dump us
+  // back into the search box. As a side effect, this should also prevent overriding by other sites.
+  //
+  // Subject to internationalization issues since we're using keyIdentifier instead of charCode (in keypress).
+  //
+  // TOOD(ilya): Revisit this. Not sure it's the absolute best approach.
+  if (keyChar == "" && !insertMode && currentCompletionKeys.indexOf(getKeyChar(event)) != -1)
+    event.stopPropagation();
+}
+
+function checkIfEnabledForUrl() {
+    var url = window.location.toString();
+
+    chrome.extension.sendRequest({ handler: "isEnabledForUrl", url: url }, function (response) {
+      isEnabledForUrl = response.isEnabledForUrl;
+      if (isEnabledForUrl)
+        initializeWhenEnabled();
+      else if (HUD.isReady())
+        // Quickly hide any HUD we might already be showing, e.g. if we entered insertMode on page load.
+        HUD.hide();
+    });
 }
 
 function refreshCompletionKeys(completionKeys) {
@@ -493,8 +574,8 @@ function exitFindMode() {
   HUD.hide();
 }
 
-function showHelpDialog(html) {
-  if (isShowingHelpDialog || !document.body)
+function showHelpDialog(html, fid) {
+  if (isShowingHelpDialog || !document.body || fid != frameId)
     return;
   isShowingHelpDialog = true;
   var container = document.createElement("div");
@@ -517,7 +598,8 @@ function hideHelpDialog(clickEvent) {
   var helpDialog = document.getElementById("vimiumHelpDialogContainer");
   if (helpDialog)
     helpDialog.parentNode.removeChild(helpDialog);
-  clickEvent.preventDefault();
+  if (clickEvent)
+    clickEvent.preventDefault();
 }
 
 /*
@@ -714,14 +796,8 @@ function addCssToPage(css) {
   head.appendChild(style);
 }
 
-// Prevent our content script from being run on iframes -- only allow it to run on the top level DOM "window".
-// TODO(philc): We don't want to process multiple keyhandlers etc. when embedded on a page containing IFrames.
-// This should be revisited, because sometimes we *do* want to listen inside of the currently focused iframe.
-var isIframe = (window.self != window.parent);
-if (!isIframe) {
-  initializePreDomReady();
-  window.addEventListener("DOMContentLoaded", initializeOnDomReady);
-}
+initializePreDomReady();
+window.addEventListener("DOMContentLoaded", initializeOnDomReady);
 
 window.onbeforeunload = function() {
   chrome.extension.sendRequest({ handler: "updateScrollPosition",
