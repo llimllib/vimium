@@ -189,7 +189,7 @@ addCommand('goBack',              'Go back in history');
 addCommand('goForward',           'Go forward in history');
 
 // Navigating the URL hierarchy
-addCommand('goUp',                'Go up the URL hierarchy');
+addCommand('goUp',                'Go up the URL hierarchy', false, true);
 
 // Manipulating tabs:
 addCommand('nextTab',             'Go one tab right',  true);
@@ -214,7 +214,7 @@ var commandGroups = {
   pageNavigation:
     ["scrollDown", "scrollUp", "scrollLeft", "scrollRight",
      "scrollToTop", "scrollToBottom", "scrollToLeft", "scrollToRight", "scrollPageDown",
-     "scrollPageUp", "scrollFullPageDown",
+     "scrollPageUp", "scrollFullPageUp", "scrollFullPageDown",
      "reload", "toggleViewSource", "zoomIn", "zoomOut", "copyCurrentUrl", "goUp",
      "enterInsertMode", "focusInput",
      "activateLinkHintsMode", "activateLinkHintsModeToOpenInNewTab", "activateLinkHintsModeWithQueue",

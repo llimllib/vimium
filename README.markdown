@@ -97,6 +97,12 @@ When you're done, send us a pull request on Github. Feel free to include a chang
 Release Notes
 -------------
 
+1.22
+
+-  Some sites are now excluded by default.
+-  View source (`gs`) now opens in a new tab.
+-  Bugfixes.
+
 1.21 (10/24/2010)
 
 -  Critical bugfix for an excluded URLs regression due to frame support.

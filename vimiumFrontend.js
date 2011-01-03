@@ -26,6 +26,17 @@ var linkHintCss;
 // TODO(philc): This should be pulled from the extension's storage when the page loads.
 var currentZoomLevel = 100;
 
+// The types in <input type="..."> that we consider for focusInput command. Right now this is recalculated in
+// each content script. Alternatively we could calculate it once in the background page and use a request to
+// fetch it each time.
+//
+// Should we include the HTML5 date pickers here?
+var textInputTypes = ["text", "search", "email", "url", "number"];
+// The corresponding XPath for such elements.
+var textInputXPath = '//input[' +
+                     textInputTypes.map(function (type) { return '@type="' + type + '"'; }).join(" or ") +
+                     ' or not(@type)]';
+
 /*
  * Give this frame a unique id.
  */
@@ -232,8 +243,8 @@ function scrollLeft() { window.scrollBy(-1 * settings["scrollStepSize"], 0); }
 function scrollRight() { window.scrollBy(settings["scrollStepSize"], 0); }
 
 function focusInput(count) {
-  var xpath = '//input[@type="text" or @type="search"]';
-  var results = document.evaluate(xpath, document.documentElement, null,
+  var results = document.evaluate(textInputXPath,
+                                  document.documentElement, null,
                                   XPathResult.ORDERED_NODE_ITERATOR_TYPE, null);
 
   var lastInputBox;
@@ -255,7 +266,7 @@ function reload() { window.location.reload(); }
 function goBack() { history.back(); }
 function goForward() { history.forward(); }
 
-function goUp() {
+function goUp(count) {
   var url = window.location.href;
   if (url[url.length-1] == '/')
     url = url.substring(0, url.length - 1);
@@ -263,7 +274,7 @@ function goUp() {
   var urlsplit = url.split('/');
   // make sure we haven't hit the base domain yet
   if (urlsplit.length > 3) {
-    delete urlsplit[urlsplit.length-1];
+    urlsplit = urlsplit.slice(0, Math.max(3, urlsplit.length - count));
     window.location.href = urlsplit.join('/');
   }
 }
@@ -293,7 +304,7 @@ function toggleViewSourceCallback(url) {
     url = url.substr(12, url.length - 12);
   }
   else { url = "view-source:" + url; }
-  chrome.extension.sendRequest({handler: "openUrlInCurrentTab", url:url});
+  chrome.extension.sendRequest({handler: "openUrlInNewTab", url: url, selected: true});
 }
 
 /**
@@ -625,6 +636,7 @@ HUD = {
       "bottom: 0px;" +
       "color: black;" +
       "height: 13px;" +
+      "width: auto;" +
       "max-width: 400px;" +
       "min-width: 150px;" +
       "text-align: left;" +
@@ -787,8 +799,8 @@ Tween = {
 function addCssToPage(css) {
   var head = document.getElementsByTagName("head")[0];
   if (!head) {
-    console.log("Warning: unable to add CSS to the page.");
-    return;
+    head = document.createElement("head");
+    document.documentElement.appendChild(head);
   }
   var style = document.createElement("style");
   style.type = "text/css";
