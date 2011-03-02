@@ -5,7 +5,7 @@
 <div id="vimiumHelpDialog">
   <style>
     #vimiumHelpDialog * {
-      font-size:12px;
+      font-size:11px;
       line-height:130%;
       color:black;
       background-color:transparent;
@@ -27,6 +27,7 @@
       margin-left:-320px;
       top:50px;
       -webkit-box-shadow: rgba(0, 0, 0, 0.4) 0px 0px 6px;
+      z-index:99999998;
     }
     #vimiumHelpDialog a { color:blue; }
     #vimiumTitle, #vimiumTitle * { font-size:20px; }
@@ -55,9 +56,10 @@
       font-weight:bold;
       padding-top:3px;
     }
-    #vimiumHelpDialog .commandName {
-      font-family:"courier new";
-    }
+    #vimiumHelpDialog .commandName { font-family:"courier new"; }
+    /* Advanced commands are hidden by default until you show them. */
+    #vimiumHelpDialog .advanced { display: none; }
+    #vimiumHelpDialog .advanced td:nth-of-type(3) { color: #555; }
     #vimiumHelpDialog .closeButton {
       position:absolute;
       right:10px;
@@ -79,7 +81,13 @@
       cursor:default;
       -webkit-user-select:none;
     }
+    #vimiumHelpDialogFooter { position: relative; }
     #vimiumHelpDialogFooter * { font-size:10px; }
+    #vimiumHelpDialogFooter .toggleAdvancedCommands {
+      position: absolute;
+      right: 2px;
+      top: -34px;
+    }
   </style>
 
   <!-- Note that the template placeholders (e.g. "pageNavigation") will be filled in by the background
@@ -95,6 +103,8 @@
   </div>
   <div class="vimiumColumn">
     <table>
+      <tr><td></td><td></td><td class="vimiumHelpSectionTitle">Using find</td></tr>
+      {{findCommands}}
       <tr><td></td><td></td><td class="vimiumHelpSectionTitle">Navigating history</td></tr>
       {{historyNavigation}}
       <tr><td></td><td></td><td class="vimiumHelpSectionTitle">Manipulating tabs</td></tr>
@@ -108,6 +118,8 @@
   <div class="vimiumDivider"></div>
 
   <div id="vimiumHelpDialogFooter">
+    <a href="#" class="toggleAdvancedCommands">Show advanced commands</a>
+
     <div class="vimiumColumn">
       Enjoying Vimium?
       <a href="https://chrome.google.com/extensions/detail/dbepggeogbaibhgnhhndojpepiihcmeb">Leave us
@@ -118,4 +130,48 @@
       <span>Version {{version}}</span><br/>
     </div>
   </div>
+
+  <script>
+    VimiumHelpDialog = {
+      // This setting is pulled out of local storage. It's false by default.
+      advancedCommandsVisible: {{showAdvancedCommands}},
+
+      init: function() {
+        this.dialogElement = document.getElementById("vimiumHelpDialog");
+        this.dialogElement.getElementsByClassName("toggleAdvancedCommands")[0].addEventListener("click", 
+          VimiumHelpDialog.toggleAdvancedCommands, false);
+        this.showAdvancedCommands(this.advancedCommandsVisible);
+        this.centerDialog();
+      },
+
+      /*
+       * Advanced commands are hidden by default so they don't overwhelm new and casual users.
+       */
+      toggleAdvancedCommands: function(event) {
+        event.preventDefault();
+        VimiumHelpDialog.advancedCommandsVisible = !VimiumHelpDialog.advancedCommandsVisible;
+        chrome.extension.sendRequest({ handler: "saveHelpDialogSettings",
+            showAdvancedCommands: VimiumHelpDialog.advancedCommandsVisible });
+        VimiumHelpDialog.showAdvancedCommands(VimiumHelpDialog.advancedCommandsVisible);
+        VimiumHelpDialog.centerDialog();
+      },
+
+      showAdvancedCommands: function(visible) {
+        VimiumHelpDialog.dialogElement.getElementsByClassName("toggleAdvancedCommands")[0].innerHTML =
+            visible ? "Hide advanced commands" : "Show advanced commands";
+        var advanced = VimiumHelpDialog.dialogElement.getElementsByClassName("advanced");
+        for (var i = 0; i < advanced.length; i++)
+          advanced[i].style.display = (visible ? "table-row" : "none");
+      },
+
+      centerDialog: function() {
+        var zoomFactor = currentZoomLevel / 100.0;
+        this.dialogElement.style.top = Math.max(
+            (window.innerHeight - this.dialogElement.clientHeight * zoomFactor) / 2.0,
+            20) / zoomFactor + "px";
+        }
+    };
+
+    VimiumHelpDialog.init();
+  </script>
 </div>

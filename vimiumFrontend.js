@@ -61,7 +61,8 @@ function initializePreDomReady() {
   checkIfEnabledForUrl();
 
   var getZoomLevelPort = chrome.extension.connect({ name: "getZoomLevel" });
-  getZoomLevelPort.postMessage({ domain: window.location.host });
+  if (window.self == window.parent)
+    getZoomLevelPort.postMessage({ domain: window.location.host });
 
   chrome.extension.sendRequest({handler: "getLinkHintCss"}, function (response) {
     linkHintCss = response.linkHintCss;
@@ -152,8 +153,8 @@ function initializeWhenEnabled() {
 /*
  * The backend needs to know which frame has focus.
  */
-window.addEventListener("focus", function(e){
-  chrome.extension.sendRequest({handler: "frameFocused", frameId: frameId});
+window.addEventListener("focus", function(e) {
+  chrome.extension.sendRequest({ handler: "frameFocused", frameId: frameId });
 });
 
 /*
@@ -184,7 +185,8 @@ function initializeOnDomReady() {
 // This is a little hacky but sometimes the size wasn't available on domReady?
 function registerFrameIfSizeAvailable (top) {
   if (innerWidth != undefined && innerWidth != 0 && innerHeight != undefined && innerHeight != 0)
-    chrome.extension.sendRequest({ handler: "registerFrame", frameId: frameId, area: innerWidth * innerHeight, top: top, total: frames.length + 1 });
+    chrome.extension.sendRequest({ handler: "registerFrame", frameId: frameId,
+        area: innerWidth * innerHeight, top: top, total: frames.length + 1 });
   else
     setTimeout(function () { registerFrameIfSizeAvailable(top); }, 100);
 }
@@ -220,12 +222,22 @@ function setPageZoomLevel(zoomLevel, showUINotification) {
 }
 
 function zoomIn() {
-  setPageZoomLevel(currentZoomLevel += 20, true);
-  saveZoomLevel(window.location.host, currentZoomLevel);
+  currentZoomLevel += 20;
+  setAndSaveZoom();
 }
 
 function zoomOut() {
-  setPageZoomLevel(currentZoomLevel -= 20, true);
+  currentZoomLevel -= 20;
+  setAndSaveZoom();
+}
+
+function zoomReset() {
+  currentZoomLevel = 100;
+  setAndSaveZoom();
+}
+
+function setAndSaveZoom() {
+  setPageZoomLevel(currentZoomLevel, true);
   saveZoomLevel(window.location.host, currentZoomLevel);
 }
 
@@ -550,6 +562,45 @@ function performBackwardsFind() {
   findModeQueryHasResults = window.find(findModeQuery, false, true, true, false, true, false);
 }
 
+function findAndFollowLink(linkStrings) {
+  for (i = 0; i < linkStrings.length; i++) {
+    var findModeQueryHasResults = window.find(linkStrings[i], false, true, true, false, true, false);
+    if (findModeQueryHasResults) {
+      var node = window.getSelection().anchorNode;
+      while (node.nodeName != 'BODY') {
+        if (node.nodeName == 'A') {
+          window.location = node.href;
+          return true;
+        }
+        node = node.parentNode;
+      }
+    }
+  }
+}
+
+function findAndFollowRel(value) {
+  var relTags = ['link', 'a', 'area'];
+  for (i = 0; i < relTags.length; i++) {
+    var elements = document.getElementsByTagName(relTags[i]);
+    for (j = 0; j < elements.length; j++) {
+      if (elements[j].hasAttribute('rel') && elements[j].rel == value) {
+        window.location = elements[j].href;
+        return true;
+      }
+    }
+  }
+}
+
+function goPrevious() {
+  var previousStrings = ["\bprev\b","\bprevious\b","\u00AB","<<","<"];
+  findAndFollowRel('prev') || findAndFollowLink(previousStrings);
+}
+
+function goNext() {
+  var nextStrings = ["\bnext\b","\u00BB",">>","\bmore\b",">"];
+  findAndFollowRel('next') || findAndFollowLink(nextStrings);
+}
+
 function showFindModeHUDForQuery() {
   if (findModeQueryHasResults || findModeQuery.length == 0)
     HUD.show("/" + insertSpaces(findModeQuery));
@@ -591,17 +642,17 @@ function showHelpDialog(html, fid) {
   isShowingHelpDialog = true;
   var container = document.createElement("div");
   container.id = "vimiumHelpDialogContainer";
+
+  document.body.appendChild(container);
+
   container.innerHTML = html;
+  // This is necessary because innerHTML does not evaluate javascript embedded in <script> tags.
+  var scripts = Array.prototype.slice.call(container.getElementsByTagName("script"));
+  scripts.forEach(function(script) { eval(script.text); });
+
   container.getElementsByClassName("closeButton")[0].addEventListener("click", hideHelpDialog, false);
   container.getElementsByClassName("optionsPage")[0].addEventListener("click",
       function() { chrome.extension.sendRequest({ handler: "openOptionsPageInNewTab" }); }, false);
-
-  document.body.appendChild(container);
-  var dialog = document.getElementById("vimiumHelpDialog");
-  dialog.style.zIndex = "99999998";
-  var zoomFactor = currentZoomLevel / 100.0;
-  dialog.style.top =
-      Math.max((window.innerHeight - dialog.clientHeight * zoomFactor) / 2.0, 20) / zoomFactor + "px";
 }
 
 function hideHelpDialog(clickEvent) {

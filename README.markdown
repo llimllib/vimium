@@ -11,46 +11,44 @@ You can install the stable version of Vimium from the
 
 Alternatively, you can install it from source:
 
-1. Navigate to chrome://extensions
-2. Click on "Load Extension..."
-3. Select the vimium directory.
+1. Navigate to `chrome://extensions`
+2. Toggle into Developer Mode
+3. Click on "Load Unpacked Extension..."
+4. Select the Vimium directory.
 
-The Settings page can be found by clicking the Options button next to Vimium on chrome://extensions.
+The Options page can be reached via a link on the help dialog (hit `?`) or via the button next to Vimium on
+the Chrome Extensions page (`chrome://extensions`).
 
 Keyboard Bindings
 -----------------
 
-Modifier keys are specified as follows: <c-x>, <m-x>, <a-x> for ctrl+x, meta+x, and alt+x
-respectively.
+Modifier keys are specified as &lt;c-x&gt; &lt;m-x&gt;, &lt;a-x&gt; for ctrl+x, meta+x, and alt+x
+respectively. See the next section for instructions on modifying these bindings.
 
 Navigating the current page:
+    ?       show the help dialog for a list of all available keys
     h       scroll left
     j       scroll down
     k       scroll up
     l       scroll right
     gg      scroll to top of the page
     G       scroll to bottom of the page
-    <c-d>, <c-e>   scroll down a page
-    <c-u>, <c-y>   scroll up a page
-    <c-f>   scroll down a full page
-    <c-b>   scroll up a full page
-    zH      scroll all the way left
-    zL      scroll all the way right
-    f       activate link hints mode to open in current tab
-    F       activate link hints mode to open in new tab
-    <a-f>   activate link hints mode to open multiple links in a new tab
+    d       scroll down half a page
+    u       scroll up half a page
+    f       open a link in the current tab
+    F       open a link in a new tab
     r       reload
     gs      view source
     zi      zoom in
     zo      zoom out
+    i       enter insert mode -- all commands will be ignored until you hit esc to exit
+    yy      copy the current url to the clipboard
+    gf      cycle forward to the next frame
+
+Using find:
     /       enter find mode -- type your search query and hit enter to search or esc to cancel
     n       cycle forward to the next find match
     N       cycle backward to the previous find match
-    i       enter insert mode -- all commands will be ignored until you hit esc to exit
-    yy      copy the current url to the clipboard
-    gu      go up one level in the URL hierarchy
-    gf      cycle forward to the next frame
-    gi      focus the first (or n-th) text input box on the page
 
 Navigating your history:
     H       go back in history
@@ -60,13 +58,58 @@ Manipulating tabs:
     J, gT      go one tab left
     K, gt      go one tab right
     t          create tab
-    d          close current tab
-    u          restore closed tab (i.e. unwind the 'd' command)
+    x          close current tab
+    X          restore closed tab (i.e. unwind the 'x' command)
+
+Additional advanced browsing commands:
+    ]]      Follow the link labeled 'next' or '>'. Helpful for browsing paginated sites.
+    [[      Follow the link labeled 'previous' or '<'. Helpful for browsing paginated sites.
+    <a-f>   open multiple links in a new tab
+    gi      focus the first (or n-th) text input box on the page
+    gu      go up one level in the URL hierarchy
+    zH      scroll all the way left
+    zL      scroll all the way right
+    z0      reset zoom to default value
+
 
 Vimium supports command repetition so, for example, hitting '5t' will open 5 tabs in rapid succession. ESC (or
-<c-[>) will clear any partial commands in the queue.
+&lt;c-[&gt;) will clear any partial commands in the queue and will also exit insert and find modes.
 
-Keys can be unmapped and remapped to different commands under Advanced Options.
+
+Custom Key Mappings
+-------------------
+
+You may remap or unmap any of the default key bindings in the "Key mappings" section under "Advanced Options"
+on the options page.
+
+Enter one of the following key mapping commands per line:
+
+- `map key command`: Maps a key to a Vimium command. Overrides Chrome's default behavior (if any).
+- `unmap key`: Unmaps a key and restores Chrome's default behavior (if any).
+- `unmapAll`: Unmaps all bindings. This is useful if you want to completely wipe Vimium's defaults and start
+  from scratch with your own setup.
+
+Examples:
+
+- `map <c-d> scrollPageDown` maps ctrl+d to scrolling the page down. Chrome's default behavior of bringing up
+  a bookmark dialog is suppressed.
+- `map r reload` maps the r key to reloading the page.
+- `unmap <c-d>` removes any mapping for ctrl+d and restores Chrome's default behavior.
+- `unmap r` removes any mapping for the r key.
+
+Available Vimium commands can be found via the "Show Available Commands" link near the key mapping box. The
+command name appears to the right of the description in parenthesis.
+
+You can add comments to your key mappings by starting a line with `"` or `#`.
+
+The following special keys are available for mapping:
+
+- `<c-*>`, `<a-*>`, `<m-*>` for ctrl, alt, and meta (command on Mac) respectively with any key. Replace `*`
+  with the key of choice.
+- `<left>`, `<right>`, `<up>`, `<down>` for the arrow keys
+- `<f1>` through `<f12>` for the function keys
+
+Shifts are automatically detected so, for example, `<c-&>` corresponds to ctrl+shift+7 on an English keyboard.
 
 Editing the exclusion list
 ------------
@@ -84,23 +127,41 @@ Editing the exclusion list
 Contributing
 ------------
 
-You'd like to fix a bug or implement a feature? Great! Check out the bugs on our issues tracker, or implement one of
-the suggestions there that have been tagged 'todo'. If you have a suggestion of your own, start a discussion on
-the issues tracker or on the [mailing list][list_url]. If it mirrors a similar feature in another browser or in Vim
-itself, let us know! Once you've picked something to work on, add a comment to the respective issue so others don't
-duplicate your effort.
+You'd like to fix a bug or implement a feature? Great! Check out the bugs on our issues tracker, or implement
+one of the suggestions there that have been tagged 'todo'. If you have a suggestion of your own, start a
+discussion on the issues tracker or on the [mailing list][list_url]. If it mirrors a similar feature in
+another browser or in Vim itself, let us know! Once you've picked something to work on, add a comment to the
+respective issue so others don't duplicate your effort.
 
-When you're done, send us a pull request on Github. Feel free to include a change to the CREDITS file with your patch.
+When you're done, send us a pull request on Github. Feel free to include a change to the CREDITS file with
+your patch.
 
 [list_url]: http://groups.google.com/group/vimium-dev?hl=en
+
+Some brief coding style guidelines: 1) follow the style already present in the file, 2) ensure your lines
+don't exceed 110 characters.
 
 Release Notes
 -------------
 
-1.22
+1.27
+
+- Bugfixes.
+
+1.26 (02/17/2011)
+
+- `<c-d>`, `<c-f>` and related are no longer bound by default. You can rebind them on the options page.
+- Faster link hinting.
+
+1.22, 1.23, 1.24, 1.25 (02/10/2011)
 
 -  Some sites are now excluded by default.
 -  View source (`gs`) now opens in a new tab.
+-  Support for browsing paginated sites using `]]` and `[[` to go forward and backward respectively.
+-  `z0` will reset the zoom level for the current page.
+-  Many of the less-used commands are now marked as "advanced" and hidden in the help dialog by default, so
+   that the core command set is more focused and approachable.
+-  Improvements to link hinting.
 -  Bugfixes.
 
 1.21 (10/24/2010)
@@ -109,7 +170,8 @@ Release Notes
 
 1.20 (10/24/2010)
 
--  In link hints mode, holding down the shift key will now toggle between opening in the current tab and opening in a new tab.
+-  In link hints mode, holding down the shift key will now toggle between opening in the current tab and
+   opening in a new tab.
 -  Two new commands (`zH` and `zL`) to scroll to the left and right edges of the page.
 -  A new command (`gi`) to focus the first (or n-th) text input box on the page.
 -  A new command (`<a-f>`) to open up multiple links at a time in new tabs.
@@ -126,13 +188,17 @@ Release Notes
 
 -  Vimium now runs on pages with file:/// and ftp:///
 -  The Options page is now linked from the Help dialog.
--  Arrow keys and function keys can now be mapped using &lt;left&gt;, &lt;right&gt;, &lt;up&gt;, &lt;down&gt;, &lt;f1&gt;, &lt;f2&gt;, etc. in the mappings interface.
--  There is a new command `goUp` (mapped to `gu` by default) that will go up one level in the URL hierarchy. For example: from http://vimium.github.com/foo/bar to http://vimium.github.com/foo. At the moment, `goUp` does not support command repetition.
+-  Arrow keys and function keys can now be mapped using &lt;left&gt;, &lt;right&gt;, &lt;up&gt;, &lt;down&gt;,
+   &lt;f1&gt;, &lt;f2&gt;, etc. in the mappings interface.
+-  There is a new command `goUp` (mapped to `gu` by default) that will go up one level in the URL hierarchy.
+   For example: from http://vimium.github.com/foo/bar to http://vimium.github.com/foo. At the moment, `goUp`
+does not support command repetition.
 -  Bug fixes and optimizations.
 
 1.17 (04/18/2010)
 
--  'u' now restores tabs that were closed by the mouse or with native shortcuts. Tabs are also restored in their prior position.
+-  'u' now restores tabs that were closed by the mouse or with native shortcuts. Tabs are also restored in
+   their prior position.
 -  New 'unmapAll' command in the key mappings interface to remove all default mappings.
 -  Link hints are now faster and more reliable.
 -  Bug fixes.
@@ -156,12 +222,12 @@ Release Notes
 
 1.13 (01/21/2010)
 
--  <c-f> and <c-b> are now mapped to scroll a full page up or down respectively.
+- `<c-f>` and `<c-b>` are now mapped to scroll a full page up or down respectively.
 -  Bugfixes related to entering insert mode when the page first loads, and when focusing Flash embeds.
 -  Added command listing to the Options page for easy reference.
 -  J & K have reversed for tab switching: J goes left and K goes right.
--  <c-[> is now equivalent to ESC, to match the behavior of VIM.
--  <c-e> & <c-y> are now mapped to scroll down and up respectively.
+-  `<c-[>` is now equivalent to ESC, to match the behavior of VIM.
+-  `<c-e>` and `<c-y>` are now mapped to scroll down and up respectively.
 -  The characters used for link hints are now configurable under Advanced Options.
 
 1.11, 1.12 (01/08/2010)
@@ -175,7 +241,8 @@ Release Notes
 1.1 (01/03/2010)
 
 -  A nicer looking settings page.
--  An exclusion list that allows you to define URL patterns for which Vimium will be disabled (e.g.  http\*://mail.google.com/\*).
+-  An exclusion list that allows you to define URL patterns for which Vimium will be disabled (e.g.
+   http\*://mail.google.com/\*).
 -  Vimium-interpreted keystrokes are no longer sent to the page.
 -  Better Windows support.
 -  Various miscellaneous bug fixes and UI improvements.
