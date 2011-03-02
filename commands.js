@@ -150,7 +150,7 @@ function clearKeyMappingsAndSetDefaults() {
     "x": "removeTab",
     "X": "restoreTab",
 
-    "gf": "nextFrame"
+    "gf": "nextFrame",
 
     //experimental
     "pb": "runReadability",
