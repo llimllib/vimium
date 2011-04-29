@@ -21,6 +21,7 @@ var saveZoomLevelPort;
 var isEnabledForUrl = true;
 // The user's operating system.
 var currentCompletionKeys;
+var validFirstKeys;
 var linkHintCss;
 
 // TODO(philc): This should be pulled from the extension's storage when the page loads.
@@ -43,6 +44,7 @@ var textInputXPath = '//input[' +
 frameId = Math.floor(Math.random()*999999999)
 
 var hasModifiersRegex = /^<([amc]-)+.>/;
+var googleRegex = /:\/\/[^/]*google[^/]+/;
 
 function getSetting(key) {
   if (!settingPort)
@@ -74,20 +76,21 @@ function initializePreDomReady() {
   keyPort = chrome.extension.connect({ name: "keyDown" });
 
   chrome.extension.onRequest.addListener(function(request, sender, sendResponse) {
-    if (request.name == "hideUpgradeNotification")
+    if (request.name == "hideUpgradeNotification") {
       HUD.hideUpgradeNotification();
-    else if (request.name == "showUpgradeNotification" && isEnabledForUrl)
+    } else if (request.name == "showUpgradeNotification" && isEnabledForUrl) {
       HUD.showUpgradeNotification(request.version);
-    else if (request.name == "showHelpDialog")
+    } else if (request.name == "showHelpDialog") {
       if (isShowingHelpDialog)
         hideHelpDialog();
       else
         showHelpDialog(request.dialogHtml, request.frameId);
-    else if (request.name == "focusFrame")
-      if(frameId == request.frameId)
+    } else if (request.name == "focusFrame") {
+      if (frameId == request.frameId)
         focusThisFrame(request.highlight);
-    else if (request.name == "refreshCompletionKeys")
-      refreshCompletionKeys(request.completionKeys);
+    } else if (request.name == "refreshCompletionKeys") {
+      refreshCompletionKeys(request);
+    }
     sendResponse({}); // Free up the resources used by this open connection.
   });
 
@@ -102,7 +105,7 @@ function initializePreDomReady() {
           }
         }
 
-        refreshCompletionKeys(args.completionKeys);
+        refreshCompletionKeys(args);
       });
     }
     else if (port.name == "getScrollPosition") {
@@ -130,10 +133,6 @@ function initializePreDomReady() {
       });
     } else if (port.name == "returnSetting") {
       port.onMessage.addListener(setSetting);
-    } else if (port.name == "refreshCompletionKeys") {
-      port.onMessage.addListener(function (args) {
-        refreshCompletionKeys(args.completionKeys);
-      });
     }
   });
 }
@@ -401,8 +400,8 @@ function onKeydown(event) {
       exitInsertMode();
 
       // Added to prevent Google Instant from reclaiming the keystroke and putting us back into the search box.
-      // TOOD(ilya): Revisit this. Not sure it's the absolute best approach.
-      event.stopPropagation();
+      if (isGoogleSearch())
+        event.stopPropagation();
     }
   }
   else if (findMode)
@@ -443,7 +442,8 @@ function onKeydown(event) {
   // Subject to internationalization issues since we're using keyIdentifier instead of charCode (in keypress).
   //
   // TOOD(ilya): Revisit this. Not sure it's the absolute best approach.
-  if (keyChar == "" && !insertMode && currentCompletionKeys.indexOf(getKeyChar(event)) != -1)
+  if (keyChar == "" && !insertMode
+                    && (currentCompletionKeys.indexOf(getKeyChar(event)) != -1 || validFirstKeys[getKeyChar(event)]))
     event.stopPropagation();
 }
 
@@ -460,13 +460,21 @@ function checkIfEnabledForUrl() {
     });
 }
 
-function refreshCompletionKeys(completionKeys) {
-  if (completionKeys)
-    currentCompletionKeys = completionKeys;
-  else
-    chrome.extension.sendRequest({handler: "getCompletionKeys"}, function (response) {
-      currentCompletionKeys = response.completionKeys;
-    });
+// TODO(ilya): This just checks if "google" is in the domain name. Probably should be more targeted.
+function isGoogleSearch() {
+  var url = window.location.toString();
+  return !!url.match(googleRegex);
+}
+
+function refreshCompletionKeys(response) {
+  if (response) {
+    currentCompletionKeys = response.completionKeys;
+
+    if (response.validFirstKeys)
+      validFirstKeys = response.validFirstKeys;
+  } else {
+    chrome.extension.sendRequest({ handler: "getCompletionKeys" }, refreshCompletionKeys);
+  }
 }
 
 function onFocusCapturePhase(event) {
