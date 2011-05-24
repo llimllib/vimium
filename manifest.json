@@ -24,6 +24,7 @@
              "plugins/delicious.js",
              "plugins/tumblr.js",
              "plugins/reddit.js",
+             "plugins/news.yc.js",
              "plugins/instapaper.js"
             ],
       "run_at": "document_start",

@@ -158,7 +158,8 @@ function clearKeyMappingsAndSetDefaults() {
     "pt": "runTumblr",
     "pd": "runDelicious",
     "pa": "runRedditSubmit",
-    "pi": "runInstapaper"
+    "pi": "runInstapaper",
+    "py": "runNewsYCSubmit"
   };
 
   for (var key in defaultKeyMappings)
@@ -227,6 +228,7 @@ var commandDescriptions = {
   runTumblr: ["run Tumblr bookmarklet"],
   runDelicious: ["run del.icio.us bookmarklet"],
   runRedditSubmit: ["run reddit submit bookmarklet"],
+  runNewsYCSubmit: ["run news.ycombinator submit bookmarklet"],
   runInstapaper: ["run instapaper bookmarklet"]
 };
 
@@ -252,7 +254,7 @@ var commandGroups = {
   tabManipulation:
     ["nextTab", "previousTab", "createTab", "removeTab", "restoreTab"],
   experimental:
-    ["runReadability", "runReadItLater", "runTumblr", "runDelicious", "runRedditSubmit", "runInstapaper"],
+    ["runReadability", "runReadItLater", "runTumblr", "runDelicious", "runRedditSubmit", "runInstapaper", "runNewsYCSubmit"],
   misc:
     ["showHelp"]
 };
