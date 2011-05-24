@@ -241,8 +241,6 @@ var commandDescriptions = {
 for (var command in commandDescriptions)
   addCommand(command, commandDescriptions[command][0], commandDescriptions[command][1]);
 
-addCommand('nextFrame',           "Cycle forward to the next frame on the page", true);
-
 // An ordered listing of all available commands, grouped by type. This is the order they will
 // be shown in the help page.
 var commandGroups = {
