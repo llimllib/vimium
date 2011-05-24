@@ -4,16 +4,15 @@
  * the page's zoom level. We tell the background page that we're in domReady and ready to accept normal
  * commands by connectiong to a port named "domReady".
  */
-var settings = {};
-var settingsToLoad = ["scrollStepSize", "linkHintCharacters"];
 
 var getCurrentUrlHandlers = []; // function(url)
 
-var insertMode = false;
+var insertModeLock = null;
 var findMode = false;
 var findModeQuery = "";
 var findModeQueryHasResults = false;
 var isShowingHelpDialog = false;
+var handlerStack = [];
 var keyPort;
 var settingPort;
 var saveZoomLevelPort;
@@ -38,6 +37,35 @@ var textInputXPath = '//input[' +
                      textInputTypes.map(function (type) { return '@type="' + type + '"'; }).join(" or ") +
                      ' or not(@type)]';
 
+var settings = {
+  values: {},
+  loadedValues: 0,
+  valuesToLoad: ["scrollStepSize", "linkHintCharacters", "filterLinkHints"],
+
+  get: function (key) { return this.values[key]; },
+
+  load: function() {
+    for (var i in this.valuesToLoad) { this.sendMessage(this.valuesToLoad[i]); }
+  },
+
+  sendMessage: function (key) {
+    if (!settingPort)
+      settingPort = chrome.extension.connect({ name: "getSetting" });
+    settingPort.postMessage({ key: key });
+  },
+
+  receiveMessage: function (args) {
+    // not using 'this' due to issues with binding on callback
+    settings.values[args.key] = args.value;
+    if (++settings.loadedValues == settings.valuesToLoad.length)
+      settings.initializeOnReady();
+  },
+
+  initializeOnReady: function () {
+    linkHints.init();
+  }
+};
+
 /*
  * Give this frame a unique id.
  */
@@ -46,19 +74,11 @@ frameId = Math.floor(Math.random()*999999999)
 var hasModifiersRegex = /^<([amc]-)+.>/;
 var googleRegex = /:\/\/[^/]*google[^/]+/;
 
-function getSetting(key) {
-  if (!settingPort)
-    settingPort = chrome.extension.connect({ name: "getSetting" });
-  settingPort.postMessage({ key: key });
-}
-
-function setSetting(args) { settings[args.key] = args.value; }
-
 /*
  * Complete initialization work that sould be done prior to DOMReady, like setting the page's zoom level.
  */
 function initializePreDomReady() {
-  for (var i in settingsToLoad) { getSetting(settingsToLoad[i]); }
+  settings.load();
 
   checkIfEnabledForUrl();
 
@@ -97,11 +117,11 @@ function initializePreDomReady() {
   chrome.extension.onConnect.addListener(function(port, name) {
     if (port.name == "executePageCommand") {
       port.onMessage.addListener(function(args) {
-        if (this[args.command] && frameId == args.frameId) {
+        if (frameId == args.frameId) {
           if (args.passCountToFunction) {
-            this[args.command].call(null, args.count);
+            utils.invokeCommandString(args.command, [args.count]);
           } else {
-            for (var i = 0; i < args.count; i++) { this[args.command].call(); }
+            for (var i = 0; i < args.count; i++) { utils.invokeCommandString(args.command); }
           }
         }
 
@@ -132,7 +152,11 @@ function initializePreDomReady() {
           setPageZoomLevel(currentZoomLevel);
       });
     } else if (port.name == "returnSetting") {
-      port.onMessage.addListener(setSetting);
+      port.onMessage.addListener(settings.receiveMessage);
+    } else if (port.name == "refreshCompletionKeys") {
+      port.onMessage.addListener(function (args) {
+        refreshCompletionKeys(args.completionKeys);
+      });
     }
   });
 }
@@ -143,6 +167,7 @@ function initializePreDomReady() {
 function initializeWhenEnabled() {
   document.addEventListener("keydown", onKeydown, true);
   document.addEventListener("keypress", onKeypress, true);
+  document.addEventListener("keyup", onKeyup, true);
   document.addEventListener("focus", onFocusCapturePhase, true);
   document.addEventListener("blur", onBlurCapturePhase, true);
   enterInsertModeIfElementIsFocused();
@@ -182,12 +207,12 @@ function initializeOnDomReady() {
 };
 
 // This is a little hacky but sometimes the size wasn't available on domReady?
-function registerFrameIfSizeAvailable (top) {
+function registerFrameIfSizeAvailable (is_top) {
   if (innerWidth != undefined && innerWidth != 0 && innerHeight != undefined && innerHeight != 0)
     chrome.extension.sendRequest({ handler: "registerFrame", frameId: frameId,
-        area: innerWidth * innerHeight, top: top, total: frames.length + 1 });
+        area: innerWidth * innerHeight, is_top: is_top, total: frames.length + 1 });
   else
-    setTimeout(function () { registerFrameIfSizeAvailable(top); }, 100);
+    setTimeout(function () { registerFrameIfSizeAvailable(is_top); }, 100);
 }
 
 /*
@@ -196,7 +221,7 @@ function registerFrameIfSizeAvailable (top) {
 function enterInsertModeIfElementIsFocused() {
   // Enter insert mode automatically if there's already a text box focused.
   if (document.activeElement && isEditable(document.activeElement))
-    enterInsertMode();
+    enterInsertMode(document.activeElement);
 }
 
 /*
@@ -244,14 +269,14 @@ function scrollToBottom() { window.scrollTo(window.pageXOffset, document.body.sc
 function scrollToTop() { window.scrollTo(window.pageXOffset, 0); }
 function scrollToLeft() { window.scrollTo(0, window.pageYOffset); }
 function scrollToRight() { window.scrollTo(document.body.scrollWidth, window.pageYOffset); }
-function scrollUp() { window.scrollBy(0, -1 * settings["scrollStepSize"]); }
-function scrollDown() { window.scrollBy(0, settings["scrollStepSize"]); }
+function scrollUp() { window.scrollBy(0, -1 * settings.get("scrollStepSize")); }
+function scrollDown() { window.scrollBy(0, settings.get("scrollStepSize")); }
 function scrollPageUp() { window.scrollBy(0, -1 * window.innerHeight / 2); }
 function scrollPageDown() { window.scrollBy(0, window.innerHeight / 2); }
 function scrollFullPageUp() { window.scrollBy(0, -window.innerHeight); }
 function scrollFullPageDown() { window.scrollBy(0, window.innerHeight); }
-function scrollLeft() { window.scrollBy(-1 * settings["scrollStepSize"], 0); }
-function scrollRight() { window.scrollBy(settings["scrollStepSize"], 0); }
+function scrollLeft() { window.scrollBy(-1 * settings.get("scrollStepSize"), 0); }
+function scrollRight() { window.scrollBy(settings.get("scrollStepSize"), 0); }
 
 function focusInput(count) {
   var results = document.evaluate(textInputXPath,
@@ -307,6 +332,8 @@ function copyCurrentUrl() {
   // TODO(ilya): Convert to sendRequest.
   var getCurrentUrlPort = chrome.extension.connect({ name: "getCurrentTabUrl" });
   getCurrentUrlPort.postMessage({});
+
+	HUD.showForDuration("Yanked URL", 1000);
 }
 
 function toggleViewSourceCallback(url) {
@@ -326,10 +353,10 @@ function toggleViewSourceCallback(url) {
  * Note that some keys will only register keydown events and not keystroke events, e.g. ESC.
  */
 function onKeypress(event) {
-  var keyChar = "";
-
-  if (linkHintsModeActivated)
+  if (!bubbleEvent('keypress', event))
     return;
+
+  var keyChar = "";
 
   // Ignore modifier keys by themselves.
   if (event.keyCode > 31) {
@@ -348,7 +375,7 @@ function onKeypress(event) {
         // Don't let the space scroll us if we're searching.
         if (event.keyCode == keyCodes.space)
           event.preventDefault();
-      } else if (!insertMode && !findMode) {
+      } else if (!isInsertMode() && !findMode) {
         if (currentCompletionKeys.indexOf(keyChar) != -1) {
           event.preventDefault();
           event.stopPropagation();
@@ -360,11 +387,21 @@ function onKeypress(event) {
   }
 }
 
-function onKeydown(event) {
-  var keyChar = "";
+function bubbleEvent(type, event) {
+  for (var i = handlerStack.length-1; i >= 0; i--) {
+    // We need to check for existence of handler because the last function call may have caused the release of
+    // more than one handler.
+    if (handlerStack[i] && handlerStack[i][type] && !handlerStack[i][type](event))
+      return false;
+  }
+  return true;
+}
 
-  if (linkHintsModeActivated)
+function onKeydown(event) {
+  if (!bubbleEvent('keydown', event))
     return;
+
+  var keyChar = "";
 
   // handle modifiers being pressed.don't handle shiftKey alone (to avoid / being interpreted as ?
   if (event.metaKey && event.keyCode > 31 || event.ctrlKey && event.keyCode > 31 || event.altKey && event.keyCode > 31) {
@@ -391,7 +428,7 @@ function onKeydown(event) {
     }
   }
 
-  if (insertMode && isEscape(event))
+  if (isInsertMode() && isEscape(event))
   {
     // Note that we can't programmatically blur out of Flash embeds from Javascript.
     if (!isEmbed(event.srcElement)) {
@@ -421,7 +458,7 @@ function onKeydown(event) {
   {
     hideHelpDialog();
   }
-  else if (!insertMode && !findMode) {
+  else if (!isInsertMode() && !findMode) {
     if (keyChar) {
         if (currentCompletionKeys.indexOf(keyChar) != -1) {
             event.preventDefault();
@@ -442,9 +479,14 @@ function onKeydown(event) {
   // Subject to internationalization issues since we're using keyIdentifier instead of charCode (in keypress).
   //
   // TOOD(ilya): Revisit this. Not sure it's the absolute best approach.
-  if (keyChar == "" && !insertMode
+  if (keyChar == "" && !isInsertMode()
                     && (currentCompletionKeys.indexOf(getKeyChar(event)) != -1 || validFirstKeys[getKeyChar(event)]))
     event.stopPropagation();
+}
+
+function onKeyup() {
+  if (!bubbleEvent('keyup', event))
+    return;
 }
 
 function checkIfEnabledForUrl() {
@@ -455,7 +497,7 @@ function checkIfEnabledForUrl() {
       if (isEnabledForUrl)
         initializeWhenEnabled();
       else if (HUD.isReady())
-        // Quickly hide any HUD we might already be showing, e.g. if we entered insertMode on page load.
+        // Quickly hide any HUD we might already be showing, e.g. if we entered insert mode on page load.
         HUD.hide();
     });
 }
@@ -479,12 +521,12 @@ function refreshCompletionKeys(response) {
 
 function onFocusCapturePhase(event) {
   if (isFocusable(event.target))
-    enterInsertMode();
+    enterInsertMode(event.target);
 }
 
 function onBlurCapturePhase(event) {
   if (isFocusable(event.target))
-    exitInsertMode();
+    exitInsertMode(event.target);
 }
 
 /*
@@ -496,30 +538,44 @@ function isFocusable(element) { return isEditable(element) || isEmbed(element); 
  * Embedded elements like Flash and quicktime players can obtain focus but cannot be programmatically
  * unfocused.
  */
-function isEmbed(element) { return ["EMBED", "OBJECT"].indexOf(element.tagName) > 0; }
+function isEmbed(element) { return ["embed", "object"].indexOf(element.nodeName.toLowerCase()) > 0; }
 
 /*
  * Input or text elements are considered focusable and able to receieve their own keyboard events,
  * and will enter enter mode if focused. Also note that the "contentEditable" attribute can be set on
  * any element which makes it a rich text editor, like the notes on jjot.com.
- * Note: we used to discriminate for text-only inputs, but this is not accurate since all input fields
- * can be controlled via the keyboard, particuarlly SELECT combo boxes.
  */
 function isEditable(target) {
-  if (target.getAttribute("contentEditable") == "true")
+  if (target.isContentEditable)
     return true;
-  var focusableInputs = ["input", "textarea", "select", "button"];
-  return focusableInputs.indexOf(target.tagName.toLowerCase()) >= 0;
+  var nodeName = target.nodeName.toLowerCase();
+  // use a blacklist instead of a whitelist because new form controls are still being implemented for html5
+  var noFocus = ["radio", "checkbox"];
+  if (nodeName == "input" && noFocus.indexOf(target.type) == -1)
+    return true;
+  var focusableElements = ["textarea", "select"];
+  return focusableElements.indexOf(nodeName) >= 0;
 }
 
-function enterInsertMode() {
-  insertMode = true;
+// We cannot count on 'focus' and 'blur' events to happen sequentially. For example, if blurring element A
+// causes element B to come into focus, we may get 'B focus' before 'A blur'. Thus we only leave insert mode
+// when the last editable element that came into focus -- which insertModeLock points to -- has been blurred.
+// If insert mode is entered manually (via pressing 'i'), then we set insertModeLock to 'undefined', and only
+// leave insert mode when the user presses <ESC>.
+function enterInsertMode(target) {
+  insertModeLock = target;
   HUD.show("Insert mode");
 }
 
-function exitInsertMode() {
-  insertMode = false;
-  HUD.hide();
+function exitInsertMode(target) {
+  if (target === undefined || insertModeLock === target) {
+    insertModeLock = null;
+    HUD.hide();
+  }
+}
+
+function isInsertMode() {
+  return insertModeLock !== null;
 }
 
 function handleKeyCharForFindMode(keyChar) {
@@ -559,31 +615,54 @@ function performFindInPlace() {
   // backwards.
   window.scrollTo(cachedScrollX, cachedScrollY);
 
-  performFind();
+  executeFind();
+}
+
+function executeFind(backwards) {
+  findModeQueryHasResults = window.find(findModeQuery, false, backwards, true, false, true, false);
+}
+
+function focusFoundLink() {
+  if (findModeQueryHasResults) {
+    var link = getLinkFromSelection();
+    if (link) link.focus();
+  }
+}
+
+function findAndFocus(backwards) {
+  executeFind(backwards);
+  focusFoundLink();
 }
 
 function performFind() {
-  findModeQueryHasResults = window.find(findModeQuery, false, false, true, false, true, false);
+  findAndFocus();
 }
 
 function performBackwardsFind() {
-  findModeQueryHasResults = window.find(findModeQuery, false, true, true, false, true, false);
+  findAndFocus(true);
+}
+
+function getLinkFromSelection() {
+  var node = window.getSelection().anchorNode;
+  while (node.nodeName.toLowerCase() !== 'body') {
+    if (node.nodeName.toLowerCase() === 'a') return node;
+    node = node.parentNode;
+  }
+  return null;
 }
 
 function findAndFollowLink(linkStrings) {
   for (i = 0; i < linkStrings.length; i++) {
-    var findModeQueryHasResults = window.find(linkStrings[i], false, true, true, false, true, false);
-    if (findModeQueryHasResults) {
-      var node = window.getSelection().anchorNode;
-      while (node.nodeName != 'BODY') {
-        if (node.nodeName == 'A') {
-          window.location = node.href;
-          return true;
-        }
-        node = node.parentNode;
+    var hasResults = window.find(linkStrings[i], false, true, true, false, true, false);
+    if (hasResults) {
+      var link = getLinkFromSelection();
+      if (link) {
+        window.location = link.href;
+        return true;
       }
     }
   }
+  return false;
 }
 
 function findAndFollowRel(value) {
@@ -600,12 +679,15 @@ function findAndFollowRel(value) {
 }
 
 function goPrevious() {
-  var previousStrings = ["\bprev\b","\bprevious\b","\u00AB","<<","<"];
+  // NOTE : If a page contains both a single angle-bracket link and a double angle-bracket link, then in most
+  // cases the single bracket link will be "prev/next page" and the double bracket link will be "first/last
+  // page", so check for single bracket first.
+  var previousStrings = ["\bprev\b", "\bprevious\b", "\bback\b", "<", "←", "«", "≪", "<<"];
   findAndFollowRel('prev') || findAndFollowLink(previousStrings);
 }
 
 function goNext() {
-  var nextStrings = ["\bnext\b","\u00BB",">>","\bmore\b",">"];
+  var nextStrings = ["\bnext\b", "\bmore\b", ">", "→", "»", "≫", ">>"];
   findAndFollowRel('next') || findAndFollowLink(nextStrings);
 }
 
@@ -626,8 +708,8 @@ function insertSpaces(query) {
   {
     if (query[i] == " " || (i + 1 < query.length && query[i + 1] == " "))
       newQuery = newQuery + query[i];
-    else
-      newQuery = newQuery + query[i] + "<span style=\"font-size: 0px;\"> </span>";
+    else //  &#8203; is a zero-width space
+      newQuery = newQuery + query[i] + "<span>&#8203;</span>";
   }
 
   return newQuery;
@@ -641,6 +723,7 @@ function enterFindMode() {
 
 function exitFindMode() {
   findMode = false;
+  focusFoundLink();
   HUD.hide();
 }
 

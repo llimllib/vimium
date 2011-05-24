@@ -27,6 +27,7 @@
     scrollStepSize: 60,
     defaultZoomLevel: 100,
     linkHintCharacters: "sadfjklewcmpgh",
+    filterLinkHints: false,
     userDefinedLinkHintCss:
       ".vimiumHintMarker {\n\n}\n" +
       ".vimiumHintMarker > .matchingCharacter {\n\n}",
@@ -65,7 +66,8 @@
     getCurrentTabUrl:     getCurrentTabUrl,
     getZoomLevel:         getZoomLevel,
     saveZoomLevel:        saveZoomLevel,
-    getSetting:           getSetting
+    getSetting:           getSetting,
+    getBookmarks:         getBookmarks
   };
 
   var sendRequestHandlers = {
@@ -302,6 +304,12 @@
     returnPort.postMessage({ key: args.key, value: value });
   }
 
+  function getBookmarks(args, port) {
+    chrome.bookmarks.search(args.query, function(bookmarks) {
+        port.postMessage({bookmarks:bookmarks})
+    })
+  }
+
   /*
    * Used by everyone to get settings from local storage.
    */
@@ -380,6 +388,8 @@
 
   function updateOpenTabs(tab) {
     openTabs[tab.id] = { url: tab.url, positionIndex: tab.index, windowId: tab.windowId };
+    // Frames are recreated on refresh
+    delete framesForTab[tab.id];
   }
 
   function handleUpdateScrollPosition(request, sender) {
@@ -586,7 +596,11 @@
 
         refreshedCompletionKeys = true;
       } else {
-        repeatFunction(this[registryEntry.command], count, 0, frameId);
+        if(registryEntry.passCountToFunction){
+          this[registryEntry.command](count);
+        } else {
+          repeatFunction(this[registryEntry.command], count, 0, frameId);
+        }
       }
 
       newKeyQueue = "";
@@ -658,7 +672,7 @@
     if (!framesForTab[sender.tab.id])
       framesForTab[sender.tab.id] = { frames: [] };
 
-    if (request.top) {
+    if (request.is_top) {
       focusedFrame = request.frameId;
       framesForTab[sender.tab.id].total = request.total;
     }
@@ -691,24 +705,28 @@
     focusedFrame = request.frameId;
   }
 
-  function nextFrame(callback, frameId) {
+  function nextFrame(count) {
     chrome.tabs.getSelected(null, function(tab) {
-      var index;
       var frames = framesForTab[tab.id].frames;
+      var curr_index = getCurrFrameIndex(frames);
 
-      for (index=0; index < frames.length; index++) {
-        if (frames[index].id == focusedFrame)
-            break;
-      }
+      // TODO: Skip the "top" frame (which doesn't actually have a <frame> tag),
+      // since it exists only to contain the other frames.
+      var new_index = (curr_index + count) % frames.length;
 
-      if (index >= frames.length-1)
-        index = 0;
-      else
-        index++;
-
-      chrome.tabs.sendRequest(tab.id, { name: "focusFrame", frameId: frames[index].id, highlight: true });
+      chrome.tabs.sendRequest(tab.id, { name: "focusFrame", frameId: frames[new_index].id, highlight: true });
     });
   }
+
+  function getCurrFrameIndex(frames) {
+    var index;
+    for (index=0; index < frames.length; index++) {
+      if (frames[index].id == focusedFrame)
+          break;
+    }
+    return index;
+  }
+
 
   function init() {
     clearKeyMappingsAndSetDefaults();
