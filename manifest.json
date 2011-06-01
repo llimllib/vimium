@@ -22,7 +22,7 @@
              "linkHints.js",
              "vimiumFrontend.js",
              "completionDialog.js",
-             "bookmarks.js"
+             "bookmarks.js",
              "plugins/readability.js",
              "plugins/readitlater.js",
              "plugins/delicious.js",

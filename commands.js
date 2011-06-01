@@ -153,7 +153,7 @@ function clearKeyMappingsAndSetDefaults() {
     "b": "activateBookmarkFindMode",
     "B": "activateBookmarkFindModeToOpenInNewTab",
 
-    "gf": "nextFrame"
+    "gf": "nextFrame",
 
     //experimental
     "pb": "runReadability",
@@ -226,7 +226,7 @@ var commandDescriptions = {
   activateBookmarkFindMode: ["Open a bookmark in the current tab"],
   activateBookmarkFindModeToOpenInNewTab: ["Open a bookmark in a new tab"],
 
-  nextFrame: ["Cycle forward to the next frame on the page", { background: true, passCountToFunction: true }]
+  nextFrame: ["Cycle forward to the next frame on the page", { background: true, passCountToFunction: true }],
 
   //experimental
   runReadability: ["run Readability bookmarklet"],
