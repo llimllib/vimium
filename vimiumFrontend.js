@@ -1,8 +1,8 @@
 /*
  * This content script takes input from its webpage and executes commands locally on behalf of the background
- * page. It must be run prior to domReady so that we perform some operations very early, like setting
- * the page's zoom level. We tell the background page that we're in domReady and ready to accept normal
- * commands by connectiong to a port named "domReady".
+ * page. It must be run prior to domReady so that we perform some operations very early. We tell the
+ * background page that we're in domReady and ready to accept normal commands by connectiong to a port named
+ * "domReady".
  */
 
 var getCurrentUrlHandlers = []; // function(url)
@@ -15,16 +15,12 @@ var isShowingHelpDialog = false;
 var handlerStack = [];
 var keyPort;
 var settingPort;
-var saveZoomLevelPort;
 // Users can disable Vimium on URL patterns via the settings page.
 var isEnabledForUrl = true;
 // The user's operating system.
 var currentCompletionKeys;
 var validFirstKeys;
 var linkHintCss;
-
-// TODO(philc): This should be pulled from the extension's storage when the page loads.
-var currentZoomLevel = 100;
 
 // The types in <input type="..."> that we consider for focusInput command. Right now this is recalculated in
 // each content script. Alternatively we could calculate it once in the background page and use a request to
@@ -75,16 +71,12 @@ var hasModifiersRegex = /^<([amc]-)+.>/;
 var googleRegex = /:\/\/[^/]*google[^/]+/;
 
 /*
- * Complete initialization work that sould be done prior to DOMReady, like setting the page's zoom level.
+ * Complete initialization work that sould be done prior to DOMReady.
  */
 function initializePreDomReady() {
   settings.load();
 
   checkIfEnabledForUrl();
-
-  var getZoomLevelPort = chrome.extension.connect({ name: "getZoomLevel" });
-  if (window.self == window.parent)
-    getZoomLevelPort.postMessage({ domain: window.location.host });
 
   chrome.extension.sendRequest({handler: "getLinkHintCss"}, function (response) {
     linkHintCss = response.linkHintCss;
@@ -144,12 +136,6 @@ function initializePreDomReady() {
     } else if (port.name == "returnCurrentTabUrl") {
       port.onMessage.addListener(function(args) {
         if (getCurrentUrlHandlers.length > 0) { getCurrentUrlHandlers.pop()(args.url); }
-      });
-    } else if (port.name == "returnZoomLevel") {
-      port.onMessage.addListener(function(args) {
-        currentZoomLevel = args.zoomLevel;
-        if (isEnabledForUrl)
-          setPageZoomLevel(currentZoomLevel);
       });
     } else if (port.name == "returnSetting") {
       port.onMessage.addListener(settings.receiveMessage);
@@ -216,53 +202,11 @@ function registerFrameIfSizeAvailable (is_top) {
 }
 
 /*
- * Checks the currently focused element of the document and will enter insert mode if that element is focusable.
+ * Enters insert mode if the currently focused element in the DOM is focusable.
  */
 function enterInsertModeIfElementIsFocused() {
-  // Enter insert mode automatically if there's already a text box focused.
   if (document.activeElement && isEditable(document.activeElement))
-    enterInsertMode(document.activeElement);
-}
-
-/*
- * Asks the background page to persist the zoom level for the given domain to localStorage.
- */
-function saveZoomLevel(domain, zoomLevel) {
-  if (!saveZoomLevelPort)
-    saveZoomLevelPort = chrome.extension.connect({ name: "saveZoomLevel" });
-  saveZoomLevelPort.postMessage({ domain: domain, zoomLevel: zoomLevel });
-}
-
-/*
- * Zoom in increments of 20%; this matches chrome's CMD+ and CMD- keystrokes.
- * Set the zoom style on documentElement because document.body does not exist pre-page load.
- */
-function setPageZoomLevel(zoomLevel, showUINotification) {
-  document.documentElement.style.zoom = zoomLevel + "%";
-  if (document.body)
-    HUD.updatePageZoomLevel(zoomLevel);
-  if (showUINotification)
-    HUD.showForDuration("Zoom: " + currentZoomLevel + "%", 1000);
-}
-
-function zoomIn() {
-  currentZoomLevel += 20;
-  setAndSaveZoom();
-}
-
-function zoomOut() {
-  currentZoomLevel -= 20;
-  setAndSaveZoom();
-}
-
-function zoomReset() {
-  currentZoomLevel = 100;
-  setAndSaveZoom();
-}
-
-function setAndSaveZoom() {
-  setPageZoomLevel(currentZoomLevel, true);
-  saveZoomLevel(window.location.host, currentZoomLevel);
+    enterInsertModeWithoutShowingIndicator(document.activeElement);
 }
 
 function scrollToBottom() { window.scrollTo(window.pageXOffset, document.body.scrollHeight); }
@@ -364,7 +308,7 @@ function onKeypress(event) {
 
     // Enter insert mode when the user enables the native find interface.
     if (keyChar == "f" && isPrimaryModifierKey(event)) {
-      enterInsertMode();
+      enterInsertModeWithoutShowingIndicator();
       return;
     }
 
@@ -404,11 +348,11 @@ function onKeydown(event) {
   var keyChar = "";
 
   // handle modifiers being pressed.don't handle shiftKey alone (to avoid / being interpreted as ?
-  if (event.metaKey && event.keyCode > 31 || event.ctrlKey && event.keyCode > 31 || event.altKey && event.keyCode > 31) {
+  if (event.metaKey && event.keyCode > 31 || event.ctrlKey && event.keyCode > 31 ||
+      event.altKey && event.keyCode > 31) {
     keyChar = getKeyChar(event);
 
-    if (keyChar != "") // Again, ignore just modifiers. Maybe this should replace the keyCode > 31 condition.
-    {
+    if (keyChar != "") { // Again, ignore just modifiers. Maybe this should replace the keyCode>31 condition.
       var modifiers = [];
 
       if (event.shiftKey)
@@ -428,44 +372,45 @@ function onKeydown(event) {
     }
   }
 
-  if (isInsertMode() && isEscape(event))
-  {
+  if (isInsertMode() && isEscape(event)) {
     // Note that we can't programmatically blur out of Flash embeds from Javascript.
     if (!isEmbed(event.srcElement)) {
-      // Remove focus so the user can't just get himself back into insert mode by typing in the same input box.
-      if (isEditable(event.srcElement)) { event.srcElement.blur(); }
+      // Remove focus so the user can't just get himself back into insert mode by typing in the same input
+      // box.
+      if (isEditable(event.srcElement))
+        event.srcElement.blur();
       exitInsertMode();
 
-      // Added to prevent Google Instant from reclaiming the keystroke and putting us back into the search box.
+      // Added to prevent Google Instant from reclaiming the keystroke and putting us back into the search
+      // box.
       if (isGoogleSearch())
         event.stopPropagation();
     }
   }
-  else if (findMode)
-  {
-    if (isEscape(event))
+  else if (findMode) {
+    if (isEscape(event)) {
       exitFindMode();
     // Don't let backspace take us back in history.
-    else if (event.keyCode == keyCodes.backspace || event.keyCode == keyCodes.deleteKey)
-    {
+    }
+    else if (event.keyCode == keyCodes.backspace || event.keyCode == keyCodes.deleteKey) {
       handleDeleteForFindMode();
       event.preventDefault();
     }
-    else if (event.keyCode == keyCodes.enter)
+    else if (event.keyCode == keyCodes.enter) {
       handleEnterForFindMode();
+    }
   }
-  else if (isShowingHelpDialog && isEscape(event))
-  {
+  else if (isShowingHelpDialog && isEscape(event)) {
     hideHelpDialog();
   }
   else if (!isInsertMode() && !findMode) {
     if (keyChar) {
-        if (currentCompletionKeys.indexOf(keyChar) != -1) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
+      if (currentCompletionKeys.indexOf(keyChar) != -1) {
+          event.preventDefault();
+          event.stopPropagation();
+      }
 
-        keyPort.postMessage({keyChar:keyChar, frameId:frameId});
+      keyPort.postMessage({keyChar:keyChar, frameId:frameId});
     }
     else if (isEscape(event)) {
       keyPort.postMessage({keyChar:"<ESC>", frameId:frameId});
@@ -479,8 +424,8 @@ function onKeydown(event) {
   // Subject to internationalization issues since we're using keyIdentifier instead of charCode (in keypress).
   //
   // TOOD(ilya): Revisit this. Not sure it's the absolute best approach.
-  if (keyChar == "" && !isInsertMode()
-                    && (currentCompletionKeys.indexOf(getKeyChar(event)) != -1 || validFirstKeys[getKeyChar(event)]))
+  if (keyChar == "" && !isInsertMode() && (currentCompletionKeys.indexOf(getKeyChar(event)) != -1 ||
+      validFirstKeys[getKeyChar(event)]))
     event.stopPropagation();
 }
 
@@ -490,16 +435,16 @@ function onKeyup() {
 }
 
 function checkIfEnabledForUrl() {
-    var url = window.location.toString();
+  var url = window.location.toString();
 
-    chrome.extension.sendRequest({ handler: "isEnabledForUrl", url: url }, function (response) {
-      isEnabledForUrl = response.isEnabledForUrl;
-      if (isEnabledForUrl)
-        initializeWhenEnabled();
-      else if (HUD.isReady())
-        // Quickly hide any HUD we might already be showing, e.g. if we entered insert mode on page load.
-        HUD.hide();
-    });
+  chrome.extension.sendRequest({ handler: "isEnabledForUrl", url: url }, function (response) {
+    isEnabledForUrl = response.isEnabledForUrl;
+    if (isEnabledForUrl)
+      initializeWhenEnabled();
+    else if (HUD.isReady())
+      // Quickly hide any HUD we might already be showing, e.g. if we entered insert mode on page load.
+      HUD.hide();
+  });
 }
 
 // TODO(ilya): This just checks if "google" is in the domain name. Probably should be more targeted.
@@ -514,14 +459,15 @@ function refreshCompletionKeys(response) {
 
     if (response.validFirstKeys)
       validFirstKeys = response.validFirstKeys;
-  } else {
+  }
+  else {
     chrome.extension.sendRequest({ handler: "getCompletionKeys" }, refreshCompletionKeys);
   }
 }
 
 function onFocusCapturePhase(event) {
   if (isFocusable(event.target))
-    enterInsertMode(event.target);
+    enterInsertModeWithoutShowingIndicator(event.target);
 }
 
 function onBlurCapturePhase(event) {
@@ -557,15 +503,23 @@ function isEditable(target) {
   return focusableElements.indexOf(nodeName) >= 0;
 }
 
-// We cannot count on 'focus' and 'blur' events to happen sequentially. For example, if blurring element A
-// causes element B to come into focus, we may get 'B focus' before 'A blur'. Thus we only leave insert mode
-// when the last editable element that came into focus -- which insertModeLock points to -- has been blurred.
-// If insert mode is entered manually (via pressing 'i'), then we set insertModeLock to 'undefined', and only
-// leave insert mode when the user presses <ESC>.
+/*
+ * Enters insert mode and show an "Insert mode" message. Showing the UI is only useful when entering insert
+ * mode manually by pressing "i". In most cases we do not show any UI (enterInsertModeWithoutShowingIndicator)
+ */
 function enterInsertMode(target) {
-  insertModeLock = target;
+  enterInsertModeWithoutShowingIndicator(target);
   HUD.show("Insert mode");
 }
+
+/*
+ * We cannot count on 'focus' and 'blur' events to happen sequentially. For example, if blurring element A
+ * causes element B to come into focus, we may get "B focus" before "A blur". Thus we only leave insert mode
+ * when the last editable element that came into focus -- which insertModeLock points to -- has been blurred.
+ * If insert mode is entered manually (via pressing 'i'), then we set insertModeLock to 'undefined', and only
+ * leave insert mode when the user presses <ESC>.
+ */
+function enterInsertModeWithoutShowingIndicator(target) { insertModeLock = target; }
 
 function exitInsertMode(target) {
   if (target === undefined || insertModeLock === target) {
@@ -574,9 +528,7 @@ function exitInsertMode(target) {
   }
 }
 
-function isInsertMode() {
-  return insertModeLock !== null;
-}
+function isInsertMode() { return insertModeLock !== null; }
 
 function handleKeyCharForFindMode(keyChar) {
   findModeQuery = findModeQuery + keyChar;
@@ -585,13 +537,11 @@ function handleKeyCharForFindMode(keyChar) {
 }
 
 function handleDeleteForFindMode() {
-  if (findModeQuery.length == 0)
-  {
+  if (findModeQuery.length == 0) {
     exitFindMode();
     performFindInPlace();
   }
-  else
-  {
+  else {
     findModeQuery = findModeQuery.substring(0, findModeQuery.length - 1);
     performFindInPlace();
     showFindModeHUDForQuery();
@@ -625,7 +575,8 @@ function executeFind(backwards) {
 function focusFoundLink() {
   if (findModeQueryHasResults) {
     var link = getLinkFromSelection();
-    if (link) link.focus();
+    if (link)
+      link.focus();
   }
 }
 
@@ -634,13 +585,9 @@ function findAndFocus(backwards) {
   focusFoundLink();
 }
 
-function performFind() {
-  findAndFocus();
-}
+function performFind() { findAndFocus(); }
 
-function performBackwardsFind() {
-  findAndFocus(true);
-}
+function performBackwardsFind() { findAndFocus(true); }
 
 function getLinkFromSelection() {
   var node = window.getSelection().anchorNode;
@@ -704,8 +651,7 @@ function showFindModeHUDForQuery() {
 function insertSpaces(query) {
   var newQuery = "";
 
-  for (var i = 0; i < query.length; i++)
-  {
+  for (var i = 0; i < query.length; i++) {
     if (query[i] == " " || (i + 1 < query.length && query[i + 1] == " "))
       newQuery = newQuery + query[i];
     else //  &#8203; is a zero-width space
@@ -852,15 +798,6 @@ HUD = {
       function() { HUD.upgradeNotificationElement().style.display = "none"; });
   },
 
-  updatePageZoomLevel: function(pageZoomLevel) {
-    // Since the chrome HUD does not scale with the page's zoom level, neither will this HUD.
-    var inverseZoomLevel = (100.0 / pageZoomLevel) * 100;
-    if (HUD._displayElement)
-      HUD.displayElement().style.zoom = inverseZoomLevel + "%";
-    if (HUD._upgradeNotificationElement)
-      HUD.upgradeNotificationElement().style.zoom = inverseZoomLevel + "%";
-  },
-
   /*
    * Retrieves the HUD HTML element.
    */
@@ -869,7 +806,6 @@ HUD = {
       HUD._displayElement = HUD.createHudElement();
       // Keep this far enough to the right so that it doesn't collide with the "popups blocked" chrome HUD.
       HUD._displayElement.style.right = "150px";
-      HUD.updatePageZoomLevel(currentZoomLevel);
     }
     return HUD._displayElement;
   },
@@ -879,7 +815,6 @@ HUD = {
       HUD._upgradeNotificationElement = HUD.createHudElement();
       // Position this just to the left of our normal HUD.
       HUD._upgradeNotificationElement.style.right = "315px";
-      HUD.updatePageZoomLevel(currentZoomLevel);
     }
     return HUD._upgradeNotificationElement;
   },

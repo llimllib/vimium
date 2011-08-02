@@ -8,13 +8,14 @@
  * In 'filter' mode, our link hints are numbers, and the user can narrow down the range of possibilities by
  * typing the text of the link itself.
  */
-
 var linkHints = {
   hintMarkers: [],
   hintMarkerContainingDiv: null,
   // The characters that were typed in while in "link hints" mode.
   shouldOpenInNewTab: false,
   shouldOpenWithQueue: false,
+  // flag for copying link instead of opening
+  shouldCopyLinkUrl: false,
   // Whether link hint's "open in current/new tab" setting is currently toggled 
   openLinkModeToggle: false,
   // Whether we have added to the page the CSS needed to display link hints.
@@ -48,15 +49,17 @@ var linkHints = {
   })(),
 
   // We need this as a top-level function because our command system doesn't yet support arguments.
-  activateModeToOpenInNewTab: function() { this.activateMode(true, false); },
+  activateModeToOpenInNewTab: function() { this.activateMode(true, false, false); },
 
-  activateModeWithQueue: function() { this.activateMode(true, true); },
+  activateModeToCopyLinkUrl: function() { this.activateMode(false, false, true); },
 
-  activateMode: function(openInNewTab, withQueue) {
+  activateModeWithQueue: function() { this.activateMode(true, true, false); },
+
+  activateMode: function(openInNewTab, withQueue, copyLinkUrl) {
     if (!this.cssAdded)
       addCssToPage(linkHintCss); // linkHintCss is declared by vimiumFrontend.js
     this.linkHintCssAdded = true;
-    this.setOpenLinkMode(openInNewTab, withQueue);
+    this.setOpenLinkMode(openInNewTab, withQueue, copyLinkUrl);
     this.buildLinkHints();
     handlerStack.push({ // modeKeyHandler is declared by vimiumFrontend.js
       keydown: this.onKeyDownInMode,
@@ -64,10 +67,13 @@ var linkHints = {
     });
   },
 
-  setOpenLinkMode: function(openInNewTab, withQueue) {
+  setOpenLinkMode: function(openInNewTab, withQueue, copyLinkUrl) {
     this.shouldOpenInNewTab = openInNewTab;
     this.shouldOpenWithQueue = withQueue;
-    if (this.shouldOpenWithQueue) {
+    this.shouldCopyLinkUrl = copyLinkUrl;
+    if (this.shouldCopyLinkUrl) {
+      HUD.show("Copy link URL to Clipboard");
+    } else if (this.shouldOpenWithQueue) {
       HUD.show("Open multiple links in a new tab");
     } else {
       if (this.shouldOpenInNewTab)
@@ -128,7 +134,9 @@ var linkHints = {
       // but floated elements. Check for this.
       if (clientRect && (clientRect.width == 0 || clientRect.height == 0)) {
         for (var j = 0, childrenCount = element.children.length; j < childrenCount; j++) {
-          if (window.getComputedStyle(element.children[j], null).getPropertyValue('float') == 'none')
+          var computedStyle = window.getComputedStyle(element.children[j], null);
+          // Ignore child elements which are not floated and not absolutely positioned for parent elements with zero width/height
+          if (computedStyle.getPropertyValue('float') == 'none' && computedStyle.getPropertyValue('position') != 'absolute')
             continue;
           var childClientRect = element.children[j].getClientRects()[0];
           if (!this.isVisible(element.children[j], childClientRect))
@@ -145,10 +153,10 @@ var linkHints = {
    * Returns true if element is visible.
    */
   isVisible: function(element, clientRect) {
-    // Exclude links which have just a few pixels on screen, because the link hints won't show for them anyway.
-    var zoomFactor = currentZoomLevel / 100.0;
-    if (!clientRect || clientRect.top < 0 || clientRect.top * zoomFactor >= window.innerHeight - 4 ||
-        clientRect.left < 0 || clientRect.left * zoomFactor >= window.innerWidth - 4)
+    // Exclude links which have just a few pixels on screen, because the link hints won't show for them
+    // anyway.
+    if (!clientRect || clientRect.top < 0 || clientRect.top >= window.innerHeight - 4 ||
+        clientRect.left < 0 || clientRect.left  >= window.innerWidth - 4)
       return false;
 
     if (clientRect.width < 3 || clientRect.height < 3)
@@ -172,7 +180,7 @@ var linkHints = {
 
     if (event.keyCode == keyCodes.shiftKey && !this.openLinkModeToggle) {
       // Toggle whether to open link in a new or current tab.
-      this.setOpenLinkMode(!this.shouldOpenInNewTab, this.shouldOpenWithQueue);
+      this.setOpenLinkMode(!this.shouldOpenInNewTab, this.shouldOpenWithQueue, false);
       this.openLinkModeToggle = true;
     }
 
@@ -202,7 +210,7 @@ var linkHints = {
   onKeyUpInMode: function(event) {
     if (event.keyCode == keyCodes.shiftKey && this.openLinkModeToggle) {
       // Revert toggle on whether to open link in new or current tab. 
-      this.setOpenLinkMode(!this.shouldOpenInNewTab, this.shouldOpenWithQueue);
+      this.setOpenLinkMode(!this.shouldOpenInNewTab, this.shouldOpenWithQueue, false);
       this.openLinkModeToggle = false;
     }
     event.stopPropagation();
@@ -225,6 +233,9 @@ var linkHints = {
           that.delayMode = false;
           that.activateModeWithQueue();
         });
+      } else if (this.shouldCopyLinkUrl) {
+        this.copyLinkUrl(matchedLink);
+        this.deactivateMode(delay, function() { that.delayMode = false; });
       } else if (this.shouldOpenInNewTab) {
         this.simulateClick(matchedLink);
         matchedLink.focus();
@@ -248,6 +259,10 @@ var linkHints = {
         element.nodeName.toLowerCase() == "textarea";
   },
   
+  copyLinkUrl: function(link) {
+    chrome.extension.sendRequest({handler: 'copyLinkUrl', data: link.href});
+  },
+
   simulateSelect: function(element) {
     element.focus();
     // When focusing a textbox, put the selection caret at the end of the textbox's contents.
@@ -354,6 +369,12 @@ var alphabetHints = {
     var hintStringLength = hintString.length;
     for (var i = 0; i < numHintDigits - hintStringLength; i++)
       hintString.unshift(settings.get('linkHintCharacters')[0]);
+
+    // Reversing the hint string has the advantage of making the link hints
+    // appear to spread out after the first key is hit. This is helpful on a
+    // page that has http links that are close to each other where link hints
+    // of 2 characters or more occlude each other.
+    hintString.reverse();
     return hintString.join("");
   },
 
@@ -554,11 +575,8 @@ var hintUtils = {
     marker.clickableItem = link.element;
 
     var clientRect = link.rect;
-    // The coordinates given by the window do not have the zoom factor included since the zoom is set only on
-    // the document node.
-    var zoomFactor = currentZoomLevel / 100.0;
-    marker.style.left = clientRect.left + window.scrollX / zoomFactor + "px";
-    marker.style.top = clientRect.top  + window.scrollY / zoomFactor + "px";
+    marker.style.left = clientRect.left + window.scrollX + "px";
+    marker.style.top = clientRect.top  + window.scrollY  + "px";
 
     return marker;
   }
