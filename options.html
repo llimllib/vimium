@@ -81,7 +81,7 @@
   $ = function(id) { return document.getElementById(id); };
   var defaultSettings = chrome.extension.getBackgroundPage().defaultSettings;
 
-  var editableFields = ["scrollStepSize", "defaultZoomLevel", "excludedUrls", "linkHintCharacters",
+  var editableFields = ["scrollStepSize", "excludedUrls", "linkHintCharacters",
                         "userDefinedLinkHintCss", "keyMappings", "vimiumRcFile", "filterLinkHints"];
 
   var canBeEmptyFields = ["excludedUrls", "keyMappings", "userDefinedLinkHintCss", "vimiumRcFile"];
