@@ -4,7 +4,6 @@
  * background page that we're in domReady and ready to accept normal commands by connectiong to a port named
  * "domReady".
  */
-
 var getCurrentUrlHandlers = []; // function(url)
 
 var insertModeLock = null;
@@ -21,22 +20,27 @@ var isEnabledForUrl = true;
 var currentCompletionKeys;
 var validFirstKeys;
 var linkHintCss;
+var activatedElement;
 
 // The types in <input type="..."> that we consider for focusInput command. Right now this is recalculated in
 // each content script. Alternatively we could calculate it once in the background page and use a request to
 // fetch it each time.
 //
 // Should we include the HTML5 date pickers here?
-var textInputTypes = ["text", "search", "email", "url", "number"];
+
 // The corresponding XPath for such elements.
-var textInputXPath = '//input[' +
-                     textInputTypes.map(function (type) { return '@type="' + type + '"'; }).join(" or ") +
-                     ' or not(@type)]';
+var textInputXPath = (function() {
+  var textInputTypes = ["text", "search", "email", "url", "number", "password"];
+  var inputElements = ["input[" +
+    textInputTypes.map(function (type) { return '@type="' + type + '"'; }).join(" or ") + "or not(@type)]",
+    "textarea", "*[@contenteditable='' or translate(@contenteditable, 'TRUE', 'true')='true']"];
+  return utils.makeXPath(inputElements);
+})();
 
 var settings = {
   values: {},
   loadedValues: 0,
-  valuesToLoad: ["scrollStepSize", "linkHintCharacters", "filterLinkHints"],
+  valuesToLoad: ["scrollStepSize", "linkHintCharacters", "filterLinkHints", "previousPatterns", "nextPatterns"],
 
   get: function (key) { return this.values[key]; },
 
@@ -102,6 +106,11 @@ function initializePreDomReady() {
         focusThisFrame(request.highlight);
     } else if (request.name == "refreshCompletionKeys") {
       refreshCompletionKeys(request);
+    } else if (request.name == "exitImplicitInsertMode") {
+      if (!HUD.isShowing) {
+        document.activeElement.blur();
+        exitInsertMode();
+      }
     }
     sendResponse({}); // Free up the resources used by this open connection.
   });
@@ -156,6 +165,7 @@ function initializeWhenEnabled() {
   document.addEventListener("keyup", onKeyup, true);
   document.addEventListener("focus", onFocusCapturePhase, true);
   document.addEventListener("blur", onBlurCapturePhase, true);
+  document.addEventListener("DOMActivate", onDOMActivate, true);
   enterInsertModeIfElementIsFocused();
 }
 
@@ -209,42 +219,94 @@ function enterInsertModeIfElementIsFocused() {
     enterInsertModeWithoutShowingIndicator(document.activeElement);
 }
 
+function onDOMActivate(event) {
+  activatedElement = event.target;
+}
+
+/**
+ * activatedElement is different from document.activeElement -- the latter seems to be reserved mostly for
+ * input elements. This mechanism allows us to decide whether to scroll a div or to scroll the whole document.
+ */
+function scrollActivatedElementBy(x, y) {
+  // if this is called before domReady, just use the window scroll function
+  if (!document.body) {
+    window.scrollBy(x, y);
+    return;
+  }
+
+  if (!activatedElement || utils.getVisibleClientRect(activatedElement) === null)
+    activatedElement = document.body;
+
+  // Chrome does not report scrollHeight accurately for nodes with pseudo-elements of height 0 (bug 110149).
+  // Therefore we just try to increase scrollTop blindly -- if it fails we know we have reached the end of the
+  // content.
+  if (y !== 0) {
+    var element = activatedElement;
+    do {
+      var oldScrollTop = element.scrollTop;
+      element.scrollTop += y;
+      var lastElement = element;
+      // we may have an orphaned element. if so, just scroll the body element.
+      element = element.parentElement || document.body;
+    } while(lastElement.scrollTop == oldScrollTop && lastElement.nodeName.toLowerCase() != 'body');
+  }
+
+  if (x !== 0) {
+    element = lastElement;
+    do {
+      var oldScrollLeft = element.scrollLeft;
+      element.scrollLeft += x;
+      var lastElement = element;
+      element = element.parentElement || document.body;
+    } while(lastElement.scrollLeft == oldScrollLeft && lastElement.nodeName.toLowerCase() != 'body');
+  }
+
+  // if the activated element has been scrolled completely offscreen, subsequent changes in its scroll
+  // position will not provide any more visual feedback to the user. therefore we deactivate it so that
+  // subsequent scrolls only move the parent element.
+  var rect = activatedElement.getBoundingClientRect();
+  if (rect.top < 0 || rect.top > window.innerHeight ||
+      rect.left < 0 || rect.left > window.innerWidth)
+    activatedElement = lastElement;
+}
+
 function scrollToBottom() { window.scrollTo(window.pageXOffset, document.body.scrollHeight); }
 function scrollToTop() { window.scrollTo(window.pageXOffset, 0); }
 function scrollToLeft() { window.scrollTo(0, window.pageYOffset); }
 function scrollToRight() { window.scrollTo(document.body.scrollWidth, window.pageYOffset); }
-function scrollUp() { window.scrollBy(0, -1 * settings.get("scrollStepSize")); }
-function scrollDown() { window.scrollBy(0, settings.get("scrollStepSize")); }
-function scrollPageUp() { window.scrollBy(0, -1 * window.innerHeight / 2); }
-function scrollPageDown() { window.scrollBy(0, window.innerHeight / 2); }
-function scrollFullPageUp() { window.scrollBy(0, -window.innerHeight); }
-function scrollFullPageDown() { window.scrollBy(0, window.innerHeight); }
-function scrollLeft() { window.scrollBy(-1 * settings.get("scrollStepSize"), 0); }
-function scrollRight() { window.scrollBy(settings.get("scrollStepSize"), 0); }
+function scrollUp() { scrollActivatedElementBy(0, -1 * settings.get("scrollStepSize")); }
+function scrollDown() { scrollActivatedElementBy(0, settings.get("scrollStepSize")); }
+function scrollPageUp() { scrollActivatedElementBy(0, -1 * window.innerHeight / 2); }
+function scrollPageDown() { scrollActivatedElementBy(0, window.innerHeight / 2); }
+function scrollFullPageUp() { scrollActivatedElementBy(0, -window.innerHeight); }
+function scrollFullPageDown() { scrollActivatedElementBy(0, window.innerHeight); }
+function scrollLeft() { scrollActivatedElementBy(-1 * settings.get("scrollStepSize"), 0); }
+function scrollRight() { scrollActivatedElementBy(settings.get("scrollStepSize"), 0); }
 
 function focusInput(count) {
-  var results = document.evaluate(textInputXPath,
-                                  document.documentElement, null,
-                                  XPathResult.ORDERED_NODE_ITERATOR_TYPE, null);
+  var results = utils.evaluateXPath(textInputXPath, XPathResult.ORDERED_NODE_ITERATOR_TYPE);
 
   var lastInputBox;
   var i = 0;
 
   while (i < count) {
-    i += 1;
-
     var currentInputBox = results.iterateNext();
     if (!currentInputBox) { break; }
 
+    if (utils.getVisibleClientRect(currentInputBox) === null)
+        continue;
+
     lastInputBox = currentInputBox;
+
+    i += 1;
   }
 
   if (lastInputBox) { lastInputBox.focus(); }
 }
 
 function reload() { window.location.reload(); }
-function goBack() { history.back(); }
-function goForward() { history.forward(); }
+function goBack(count) { history.go(-count); }
+function goForward(count) { history.go(count); }
 
 function goUp(count) {
   var url = window.location.href;
@@ -331,12 +393,19 @@ function onKeypress(event) {
   }
 }
 
+/**
+ * Called whenever we receive a key event.  Each individual handler has the option to stop the event's
+ * propagation by returning a falsy value.
+ */
 function bubbleEvent(type, event) {
   for (var i = handlerStack.length-1; i >= 0; i--) {
     // We need to check for existence of handler because the last function call may have caused the release of
     // more than one handler.
-    if (handlerStack[i] && handlerStack[i][type] && !handlerStack[i][type](event))
+    if (handlerStack[i] && handlerStack[i][type] && !handlerStack[i][type](event)) {
+      event.preventDefault();
+      event.stopPropagation();
       return false;
+    }
   }
   return true;
 }
@@ -347,9 +416,10 @@ function onKeydown(event) {
 
   var keyChar = "";
 
-  // handle modifiers being pressed.don't handle shiftKey alone (to avoid / being interpreted as ?
-  if (event.metaKey && event.keyCode > 31 || event.ctrlKey && event.keyCode > 31 ||
-      event.altKey && event.keyCode > 31) {
+  // handle special keys, and normal input keys with modifiers being pressed. don't handle shiftKey alone (to
+  // avoid / being interpreted as ?
+  if (((event.metaKey || event.ctrlKey || event.altKey) && event.keyCode > 31)
+      || event.keyIdentifier.slice(0, 2) != "U+") {
     keyChar = getKeyChar(event);
 
     if (keyChar != "") { // Again, ignore just modifiers. Maybe this should replace the keyCode>31 condition.
@@ -626,15 +696,14 @@ function findAndFollowRel(value) {
 }
 
 function goPrevious() {
-  // NOTE : If a page contains both a single angle-bracket link and a double angle-bracket link, then in most
-  // cases the single bracket link will be "prev/next page" and the double bracket link will be "first/last
-  // page", so check for single bracket first.
-  var previousStrings = ["\bprev\b", "\bprevious\b", "\bback\b", "<", "←", "«", "≪", "<<"];
+  var previousPatterns = settings.get("previousPatterns") || "";
+  var previousStrings = previousPatterns.split(",");
   findAndFollowRel('prev') || findAndFollowLink(previousStrings);
 }
 
 function goNext() {
-  var nextStrings = ["\bnext\b", "\bmore\b", ">", "→", "»", "≫", ">>"];
+  var nextPatterns = settings.get("nextPatterns") || "";
+  var nextStrings = nextPatterns.split(",");
   findAndFollowRel('next') || findAndFollowLink(nextStrings);
 }
 
@@ -679,17 +748,19 @@ function showHelpDialog(html, fid) {
   isShowingHelpDialog = true;
   var container = document.createElement("div");
   container.id = "vimiumHelpDialogContainer";
+  container.className = "vimiumReset";
 
   document.body.appendChild(container);
 
   container.innerHTML = html;
+  container.getElementsByClassName("closeButton")[0].addEventListener("click", hideHelpDialog, false);
+  container.getElementsByClassName("optionsPage")[0].addEventListener("click",
+      function() { chrome.extension.sendRequest({ handler: "openOptionsPageInNewTab" }); }, false);
+
   // This is necessary because innerHTML does not evaluate javascript embedded in <script> tags.
   var scripts = Array.prototype.slice.call(container.getElementsByTagName("script"));
   scripts.forEach(function(script) { eval(script.text); });
 
-  container.getElementsByClassName("closeButton")[0].addEventListener("click", hideHelpDialog, false);
-  container.getElementsByClassName("optionsPage")[0].addEventListener("click",
-      function() { chrome.extension.sendRequest({ handler: "openOptionsPageInNewTab" }); }, false);
 }
 
 function hideHelpDialog(clickEvent) {
@@ -709,58 +780,11 @@ HUD = {
   _tweenId: -1,
   _displayElement: null,
   _upgradeNotificationElement: null,
+  isShowing: false,
 
   // This HUD is styled to precisely mimick the chrome HUD on Mac. Use the "has_popup_and_link_hud.html"
   // test harness to tweak these styles to match Chrome's. One limitation of our HUD display is that
   // it doesn't sit on top of horizontal scrollbars like Chrome's HUD does.
-  _hudCss:
-    ".vimiumHUD, .vimiumHUD * {" +
-      "line-height: 100%;" +
-      "font-size: 11px;" +
-      "font-weight: normal;" +
-    "}" +
-    ".vimiumHUD {" +
-      "position: fixed;" +
-      "bottom: 0px;" +
-      "color: black;" +
-      "height: 13px;" +
-      "width: auto;" +
-      "max-width: 400px;" +
-      "min-width: 150px;" +
-      "text-align: left;" +
-      "background-color: #ebebeb;" +
-      "padding: 3px 3px 2px 3px;" +
-      "border: 1px solid #b3b3b3;" +
-      "border-radius: 4px 4px 0 0;" +
-      "font-family: Lucida Grande, Arial, Sans;" +
-      // One less than vimium's hint markers, so link hints can be shown e.g. for the panel's close button.
-      "z-index: 99999998;" +
-      "text-shadow: 0px 1px 2px #FFF;" +
-      "line-height: 1.0;" +
-      "opacity: 0;" +
-    "}" +
-    ".vimiumHUD a, .vimiumHUD a:hover {" +
-      "background: transparent;" +
-      "color: blue;" +
-      "text-decoration: underline;" +
-    "}" +
-    ".vimiumHUD a.close-button {" +
-      "float:right;" +
-      "font-family:courier new;" +
-      "font-weight:bold;" +
-      "color:#9C9A9A;" +
-      "text-decoration:none;" +
-      "padding-left:10px;" +
-      "margin-top:-1px;" +
-      "font-size:14px;" +
-    "}" +
-    ".vimiumHUD a.close-button:hover {" +
-      "color:#333333;" +
-      "cursor:default;" +
-      "-webkit-user-select:none;" +
-    "}",
-
-  _cssHasBeenAdded: false,
 
   showForDuration: function(text, duration) {
     HUD.show(text);
@@ -773,12 +797,13 @@ HUD = {
     clearInterval(HUD._tweenId);
     HUD._tweenId = Tween.fade(HUD.displayElement(), 1.0, 150);
     HUD.displayElement().style.display = "";
+    this.isShowing = true;
   },
 
   showUpgradeNotification: function(version) {
     HUD.upgradeNotificationElement().innerHTML = "Vimium has been updated to " +
-      "<a href='https://chrome.google.com/extensions/detail/dbepggeogbaibhgnhhndojpepiihcmeb'>" +
-      version + "</a>.<a class='close-button' href='#'>x</a>";
+      "<a class='vimiumReset' href='https://chrome.google.com/extensions/detail/dbepggeogbaibhgnhhndojpepiihcmeb'>" +
+      version + "</a>.<a class='vimiumReset close-button' href='#'>x</a>";
     var links = HUD.upgradeNotificationElement().getElementsByTagName("a");
     links[0].addEventListener("click", HUD.onUpdateLinkClicked, false);
     links[1].addEventListener("click", function(event) {
@@ -820,12 +845,8 @@ HUD = {
   },
 
   createHudElement: function() {
-    if (!HUD._cssHasBeenAdded) {
-      addCssToPage(HUD._hudCss);
-      HUD._cssHasBeenAdded = true;
-    }
     var element = document.createElement("div");
-    element.className = "vimiumHUD";
+    element.className = "vimiumReset vimiumHUD";
     document.body.appendChild(element);
     return element;
   },
@@ -834,6 +855,7 @@ HUD = {
     clearInterval(HUD._tweenId);
     HUD._tweenId = Tween.fade(HUD.displayElement(), 0, 150,
       function() { HUD.displayElement().style.display = "none"; });
+    this.isShowing = false;
   },
 
   isReady: function() { return document.body != null; }

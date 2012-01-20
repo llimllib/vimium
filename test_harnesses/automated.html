@@ -26,6 +26,7 @@
         border-bottom: dashed 1px #999;
       }
     </style>
+    <link rel="stylesheet" type="text/css" href="../vimium.css" />
     <script type="text/javascript" src="../lib/utils.js"></script>
     <script type="text/javascript" src="../lib/keyboardUtils.js"></script>
     <script type="text/javascript" src="../linkHints.js"></script>
@@ -117,7 +118,7 @@
         }),
 
         should("label the hints correctly", function() {
-          var hintStrings = ["ss", "sa", "sd"];
+          var hintStrings = ["ss", "as", "ds"];
           for (var i = 0; i < 3; i++)
           assert.equal(hintStrings[i], linkHints.hintMarkers[i].getAttribute("hintString"));
         }),
@@ -223,7 +224,74 @@
             assert.equal("5: a label", linkHints.hintMarkers[4].textContent.toLowerCase());
           })
 
+        ),
+
+        context("Input focus",
+
+          setup(function() {
+            var testContent =
+              "<input type='text' id='first'/>" +
+              "<input style='display:none;' id='second'/>" +
+              "<input type='password' id='third' value='some value'/>";
+            document.getElementById("test-div").innerHTML = testContent;
+          }),
+
+          tearDown(function() {
+            document.getElementById("test-div").innerHTML = "";
+          }),
+
+          should("focus the right element", function() {
+            focusInput(1);
+            assert.equal('first', document.activeElement.id);
+            focusInput(100);
+            assert.equal('third', document.activeElement.id);
+          })
         )
+
+      );
+
+      context("Input focus",
+
+        setup(function() {
+          var testContent =
+            "<input type='text' id='first'/>" +
+            "<input style='display:none;' id='second'/>" +
+            "<input type='password' id='third' value='some value'/>";
+          document.getElementById("test-div").innerHTML = testContent;
+        }),
+
+        tearDown(function() {
+          document.getElementById("test-div").innerHTML = "";
+        }),
+
+        should("focus the right element", function() {
+          focusInput(1);
+          assert.equal('first', document.activeElement.id);
+          focusInput(100);
+          assert.equal('third', document.activeElement.id);
+        })
+
+      );
+
+      context("Web query parsing",
+
+        should("Convert query string to valid URL", function() {
+          assert.equal("http://www.google.com/", utils.ensureUrl("http://www.google.com/"));
+          assert.equal("http://www.google.com/", utils.ensureUrl("    http://www.google.com/     "));
+          assert.equal("http://www.google.com", utils.ensureUrl("www.google.com"));
+          assert.equal("http://google.com", utils.ensureUrl("google.com"));
+          assert.equal("http://www.google.com/search?q=google", utils.ensureUrl("google"));
+          assert.equal("http://www.google.com/search?q=go ogle.com", utils.ensureUrl("go ogle.com"));
+          assert.equal("http://localhost", utils.ensureUrl("localhost"));
+          assert.equal("http://xyz.museum", utils.ensureUrl("xyz.museum"));
+          assert.equal("chrome://extensions", utils.ensureUrl("chrome://extensions"));
+          assert.equal("http://user:pass@ftp.xyz.com/test",
+                       utils.ensureUrl("user:pass@ftp.xyz.com/test"));
+          assert.equal("http://127.0.0.1", utils.ensureUrl("127.0.0.1"));
+          assert.equal("http://127.0.0.1:8080", utils.ensureUrl("127.0.0.1:8080"));
+          assert.equal("http://[::]:8080", utils.ensureUrl("[::]:8080"));
+        })
+
       );
 
       Tests.outputMethod = function(output) {

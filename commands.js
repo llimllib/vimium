@@ -138,10 +138,15 @@ function clearKeyMappingsAndSetDefaults() {
     "yy": "copyCurrentUrl",
     "yf": "linkHints.activateModeToCopyLinkUrl",
 
+    "p": "openCopiedUrlInCurrentTab",
+    "P": "openCopiedUrlInNewTab",
+
     "K": "nextTab",
     "J": "previousTab",
     "gt": "nextTab",
     "gT": "previousTab",
+    "g0": "firstTab",
+    "g$": "lastTab",
 
     "t": "createTab",
     "x": "removeTab",
@@ -186,9 +191,11 @@ var commandDescriptions = {
 
   reload: ["Reload the page"],
   toggleViewSource: ["View page source"],
-  copyCurrentUrl: ["Copy the current URL to the clipboard"],
 
+  copyCurrentUrl: ["Copy the current URL to the clipboard"],
   'linkHints.activateModeToCopyLinkUrl': ["Copy a link URL to the clipboard"],
+  openCopiedUrlInCurrentTab: ["Open the clipboard's URL in the current tab", { background: true }],
+  openCopiedUrlInNewTab: ["Open the clipboard's URL in a new tab", { background: true }],
 
   enterInsertMode: ["Enter insert mode"],
 
@@ -206,8 +213,8 @@ var commandDescriptions = {
   goNext: ["Follow the link labeled next or >"],
 
   // Navigating your history
-  goBack: ["Go back in history"],
-  goForward: ["Go forward in history"],
+  goBack: ["Go back in history", { passCountToFunction: true }],
+  goForward: ["Go forward in history", { passCountToFunction: true }],
 
   // Navigating the URL hierarchy
   goUp: ["Go up the URL hierarchy", { passCountToFunction: true }],
@@ -215,6 +222,8 @@ var commandDescriptions = {
   // Manipulating tabs
   nextTab: ["Go one tab right", { background: true }],
   previousTab: ["Go one tab left", { background: true }],
+  firstTab: ["Go to the first tab", { background: true }],
+  lastTab: ["Go to the last tab", { background: true }],
   createTab: ["Create new tab", { background: true }],
   removeTab: ["Close current tab", { background: true }],
   restoreTab: ["Restore closed tab", { background: true }],
@@ -244,7 +253,8 @@ var commandGroups = {
     ["scrollDown", "scrollUp", "scrollLeft", "scrollRight",
      "scrollToTop", "scrollToBottom", "scrollToLeft", "scrollToRight", "scrollPageDown",
      "scrollPageUp", "scrollFullPageUp", "scrollFullPageDown",
-     "reload", "toggleViewSource", "copyCurrentUrl", "linkHints.activateModeToCopyLinkUrl", "goUp",
+     "reload", "toggleViewSource", "copyCurrentUrl", "linkHints.activateModeToCopyLinkUrl",
+     "openCopiedUrlInCurrentTab", "openCopiedUrlInNewTab", "goUp",
      "enterInsertMode", "focusInput",
      "linkHints.activateMode", "linkHints.activateModeToOpenInNewTab", "linkHints.activateModeWithQueue",
      "activateBookmarkFindMode", "activateBookmarkFindModeToOpenInNewTab",
@@ -253,7 +263,7 @@ var commandGroups = {
   historyNavigation:
     ["goBack", "goForward"],
   tabManipulation:
-    ["nextTab", "previousTab", "createTab", "removeTab", "restoreTab"],
+    ["nextTab", "previousTab", "firstTab", "lastTab", "createTab", "removeTab", "restoreTab"],
   experimental:
     ["runReadability", "runReadItLater", "runTumblr", "runDelicious", "runRedditSubmit", "runInstapaper", "runNewsYCSubmit"],
   misc:

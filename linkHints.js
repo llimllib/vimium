@@ -16,7 +16,7 @@ var linkHints = {
   shouldOpenWithQueue: false,
   // flag for copying link instead of opening
   shouldCopyLinkUrl: false,
-  // Whether link hint's "open in current/new tab" setting is currently toggled 
+  // Whether link hint's "open in current/new tab" setting is currently toggled
   openLinkModeToggle: false,
   // Whether we have added to the page the CSS needed to display link hints.
   cssAdded: false,
@@ -31,22 +31,19 @@ var linkHints = {
    */
   init: function() {
     this.onKeyDownInMode = this.onKeyDownInMode.bind(this);
+    this.onKeyPressInMode = this.onKeyPressInMode.bind(this);
     this.onKeyUpInMode = this.onKeyUpInMode.bind(this);
     this.markerMatcher = settings.get('filterLinkHints') == "true" ? filterHints : alphabetHints;
   },
 
-  /* 
+  /*
    * Generate an XPath describing what a clickable element is.
    * The final expression will be something like "//button | //xhtml:button | ..."
+   * We use translate() instead of lower-case() because Chrome only supports XPath 1.0.
    */
-  clickableElementsXPath: (function() {
-    var clickableElements = ["a", "textarea", "button", "select", "input[not(@type='hidden')]",
-                             "*[@onclick or @tabindex or @role='link' or @role='button']"];
-    var xpath = [];
-    for (var i in clickableElements)
-      xpath.push("//" + clickableElements[i], "//xhtml:" + clickableElements[i]);
-    return xpath.join(" | ")
-  })(),
+  clickableElementsXPath: utils.makeXPath(["a", "area[@href]", "textarea", "button", "select","input[not(@type='hidden')]",
+                             "*[@onclick or @tabindex or @role='link' or @role='button' or " +
+                             "@contenteditable='' or translate(@contenteditable, 'TRUE', 'true')='true']"]),
 
   // We need this as a top-level function because our command system doesn't yet support arguments.
   activateModeToOpenInNewTab: function() { this.activateMode(true, false, false); },
@@ -57,14 +54,18 @@ var linkHints = {
 
   activateMode: function(openInNewTab, withQueue, copyLinkUrl) {
     if (!this.cssAdded)
-      addCssToPage(linkHintCss); // linkHintCss is declared by vimiumFrontend.js
+      // linkHintCss is declared by vimiumFrontend.js and contains the user supplied css overrides.
+      addCssToPage(linkHintCss); 
     this.linkHintCssAdded = true;
     this.setOpenLinkMode(openInNewTab, withQueue, copyLinkUrl);
     this.buildLinkHints();
     handlerStack.push({ // modeKeyHandler is declared by vimiumFrontend.js
       keydown: this.onKeyDownInMode,
+      keypress: this.onKeyPressInMode,
       keyup: this.onKeyUpInMode
     });
+
+    this.openLinkModeToggle = false;
   },
 
   setOpenLinkMode: function(openInNewTab, withQueue, copyLinkUrl) {
@@ -95,7 +96,8 @@ var linkHints = {
     // that if you scroll the page and the link has position=fixed, the marker will not stay fixed.
     // Also note that adding these nodes to document.body all at once is significantly faster than one-by-one.
     this.hintMarkerContainingDiv = document.createElement("div");
-    this.hintMarkerContainingDiv.className = "internalVimiumHintMarker";
+    this.hintMarkerContainingDiv.id = "vimiumHintMarkerContainer";
+    this.hintMarkerContainingDiv.className = "vimiumReset internalVimiumHintMarker";
     for (var i = 0; i < this.hintMarkers.length; i++)
       this.hintMarkerContainingDiv.appendChild(this.hintMarkers[i]);
 
@@ -113,62 +115,39 @@ var linkHints = {
    * of digits needed to enumerate all of the links on screen.
    */
   getVisibleClickableElements: function() {
-    var resultSet = document.evaluate(this.clickableElementsXPath, document.body,
-      function(namespace) {
-        return namespace == "xhtml" ? "http://www.w3.org/1999/xhtml" : null;
-      },
-      XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+    var resultSet = utils.evaluateXPath(this.clickableElementsXPath, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE);
 
     var visibleElements = [];
 
     // Find all visible clickable elements.
     for (var i = 0, count = resultSet.snapshotLength; i < count; i++) {
       var element = resultSet.snapshotItem(i);
-      // Note: this call will be expensive if we modify the DOM in between calls.
-      var clientRect = element.getClientRects()[0];
-
-      if (this.isVisible(element, clientRect))
+      var clientRect = utils.getVisibleClientRect(element, clientRect);
+      if (clientRect !== null)
         visibleElements.push({element: element, rect: clientRect});
 
-      // If the link has zero dimensions, it may be wrapping visible
-      // but floated elements. Check for this.
-      if (clientRect && (clientRect.width == 0 || clientRect.height == 0)) {
-        for (var j = 0, childrenCount = element.children.length; j < childrenCount; j++) {
-          var computedStyle = window.getComputedStyle(element.children[j], null);
-          // Ignore child elements which are not floated and not absolutely positioned for parent elements with zero width/height
-          if (computedStyle.getPropertyValue('float') == 'none' && computedStyle.getPropertyValue('position') != 'absolute')
-            continue;
-          var childClientRect = element.children[j].getClientRects()[0];
-          if (!this.isVisible(element.children[j], childClientRect))
-            continue;
-          visibleElements.push({element: element.children[j], rect: childClientRect});
-          break;
-        }
+      if (element.localName === "area") {
+        var map = element.parentElement;
+        if (!map) continue;
+        var img = document.querySelector("img[usemap='#" + map.getAttribute("name") + "']");
+        if (!img) continue;
+        var imgClientRects = img.getClientRects();
+        if (!imgClientRects) continue;
+        var c = element.coords.split(/,/);
+        var coords = [parseInt(c[0], 10), parseInt(c[1], 10), parseInt(c[2], 10), parseInt(c[3], 10)];
+        var rect = {
+          top: imgClientRects[0].top + coords[1],
+          left: imgClientRects[0].left + coords[0],
+          right: imgClientRects[0].left + coords[2],
+          bottom: imgClientRects[0].top + coords[3],
+          width: coords[2] - coords[0],
+          height: coords[3] - coords[1]
+        };
+
+        visibleElements.push({element: element, rect: rect});
       }
     }
     return visibleElements;
-  },
-
-  /*
-   * Returns true if element is visible.
-   */
-  isVisible: function(element, clientRect) {
-    // Exclude links which have just a few pixels on screen, because the link hints won't show for them
-    // anyway.
-    if (!clientRect || clientRect.top < 0 || clientRect.top >= window.innerHeight - 4 ||
-        clientRect.left < 0 || clientRect.left  >= window.innerWidth - 4)
-      return false;
-
-    if (clientRect.width < 3 || clientRect.height < 3)
-      return false;
-
-    // eliminate invisible elements (see test_harnesses/visibility_test.html)
-    var computedStyle = window.getComputedStyle(element, null);
-    if (computedStyle.getPropertyValue('visibility') != 'visible' ||
-        computedStyle.getPropertyValue('display') == 'none')
-      return false;
-
-    return true;
   },
 
   /*
@@ -202,19 +181,21 @@ var linkHints = {
           this.showMarker(linksMatched[i], this.markerMatcher.hintKeystrokeQueue.length);
       }
     }
+  },
 
-    event.stopPropagation();
-    event.preventDefault();
+  onKeyPressInMode: function(event) {
+    return false;
   },
 
   onKeyUpInMode: function(event) {
+    if (this.delayMode)
+      return;
+
     if (event.keyCode == keyCodes.shiftKey && this.openLinkModeToggle) {
-      // Revert toggle on whether to open link in new or current tab. 
+      // Revert toggle on whether to open link in new or current tab.
       this.setOpenLinkMode(!this.shouldOpenInNewTab, this.shouldOpenWithQueue, false);
       this.openLinkModeToggle = false;
     }
-    event.stopPropagation();
-    event.preventDefault();
   },
 
   /*
@@ -258,7 +239,7 @@ var linkHints = {
     return (element.nodeName.toLowerCase() == "input" && selectableTypes.indexOf(element.type) >= 0) ||
         element.nodeName.toLowerCase() == "textarea";
   },
-  
+
   copyLinkUrl: function(link) {
     chrome.extension.sendRequest({handler: 'copyLinkUrl', data: link.href});
   },
@@ -333,14 +314,10 @@ var alphabetHints = {
   logXOfBase: function(x, base) { return Math.log(x) / Math.log(base); },
 
   getHintMarkers: function(visibleElements) {
-    //Initialize the number used to generate the character hints to be as many digits as we need to highlight
-    //all the links on the page; we don't want some link hints to have more chars than others.
-    var digitsNeeded = Math.ceil(this.logXOfBase(
-          visibleElements.length, settings.get('linkHintCharacters').length));
+    var hintStrings = this.hintStrings(visibleElements.length);
     var hintMarkers = [];
-
     for (var i = 0, count = visibleElements.length; i < count; i++) {
-      var hintString = this.numberToHintString(i, digitsNeeded);
+      var hintString = hintStrings[i];
       var marker = hintUtils.createMarkerFor(visibleElements[i]);
       marker.innerHTML = hintUtils.spanWrap(hintString);
       marker.setAttribute("hintString", hintString);
@@ -349,17 +326,62 @@ var alphabetHints = {
 
     return hintMarkers;
   },
+
+  /*
+   * Returns a list of hint strings which will uniquely identify the given number of links. The hint strings
+   * may be of different lengths.
+   */
+  hintStrings: function(linkCount) {
+    var linkHintCharacters = settings.get("linkHintCharacters");
+    // Determine how many digits the link hints will require in the worst case. Usually we do not need
+    // all of these digits for every link single hint, so we can show shorter hints for a few of the links.
+    var digitsNeeded = Math.ceil(this.logXOfBase(linkCount, linkHintCharacters.length));
+    // Short hints are the number of hints we can possibly show which are (digitsNeeded - 1) digits in length.
+    var shortHintCount = Math.floor(
+        (Math.pow(linkHintCharacters.length, digitsNeeded) - linkCount) /
+        linkHintCharacters.length);
+    var longHintCount = linkCount - shortHintCount;
+
+    var hintStrings = [];
+
+    if (digitsNeeded > 1)
+      for (var i = 0; i < shortHintCount; i++)
+        hintStrings.push(this.numberToHintString(i, digitsNeeded - 1, linkHintCharacters));
+
+    var start = shortHintCount * linkHintCharacters.length;
+    for (var i = start; i < start + longHintCount; i++)
+      hintStrings.push(this.numberToHintString(i, digitsNeeded, linkHintCharacters));
+
+    return this.shuffleHints(hintStrings, linkHintCharacters.length);
+  },
+
+  /*
+   * This shuffles the given set of hints so that they're scattered -- hints starting with the same character
+   * will be spread evenly throughout the array.
+   */
+  shuffleHints: function(hints, characterSetLength) {
+    var buckets = [], i = 0;
+    for (i = 0; i < characterSetLength; i++)
+      buckets[i] = []
+    for (i = 0; i < hints.length; i++)
+      buckets[i % buckets.length].push(hints[i]);
+    var result = [];
+    for (i = 0; i < buckets.length; i++)
+      result = result.concat(buckets[i]);
+    return result;
+  },
+
   /*
    * Converts a number like "8" into a hint string like "JK". This is used to sequentially generate all of
    * the hint text. The hint string will be "padded with zeroes" to ensure its length is equal to numHintDigits.
    */
-  numberToHintString: function(number, numHintDigits) {
-    var base = settings.get('linkHintCharacters').length;
+  numberToHintString: function(number, numHintDigits, characterSet) {
+    var base = characterSet.length;
     var hintString = [];
     var remainder = 0;
     do {
       remainder = number % base;
-      hintString.unshift(settings.get('linkHintCharacters')[remainder]);
+      hintString.unshift(characterSet[remainder]);
       number -= remainder;
       number /= Math.floor(base);
     } while (number > 0);
@@ -368,40 +390,26 @@ var alphabetHints = {
     // Note: the loop body changes hintString.length, so the original length must be cached!
     var hintStringLength = hintString.length;
     for (var i = 0; i < numHintDigits - hintStringLength; i++)
-      hintString.unshift(settings.get('linkHintCharacters')[0]);
+      hintString.unshift(characterSet[0]);
 
-    // Reversing the hint string has the advantage of making the link hints
-    // appear to spread out after the first key is hit. This is helpful on a
-    // page that has http links that are close to each other where link hints
-    // of 2 characters or more occlude each other.
-    hintString.reverse();
     return hintString.join("");
   },
 
   matchHintsByKey: function(event, hintMarkers) {
-    var linksMatched = hintMarkers;
     var keyChar = getKeyChar(event);
-    if (!keyChar)
-      return { 'linksMatched': linksMatched };
 
     if (event.keyCode == keyCodes.backspace || event.keyCode == keyCodes.deleteKey) {
-      if (this.hintKeystrokeQueue.length == 0) {
-        var linksMatched = [];
-      } else {
-        this.hintKeystrokeQueue.pop();
-        var matchString = this.hintKeystrokeQueue.join("");
-        var linksMatched = linksMatched.filter(function(linkMarker) {
-          return linkMarker.getAttribute("hintString").indexOf(matchString) == 0;
-        });
-      }
-    } else if (settings.get('linkHintCharacters').indexOf(keyChar) >= 0) {
+      if (!this.hintKeystrokeQueue.pop())
+        return { linksMatched: [] };
+    } else if (keyChar && settings.get('linkHintCharacters').indexOf(keyChar) >= 0) {
       this.hintKeystrokeQueue.push(keyChar);
-      var matchString = this.hintKeystrokeQueue.join("");
-      var linksMatched = linksMatched.filter(function(linkMarker) {
-        return linkMarker.getAttribute("hintString").indexOf(matchString) == 0;
-      });
     }
-    return { 'linksMatched': linksMatched };
+
+    var matchString = this.hintKeystrokeQueue.join("");
+    var linksMatched = hintMarkers.filter(function(linkMarker) {
+      return linkMarker.getAttribute("hintString").indexOf(matchString) == 0;
+    });
+    return { linksMatched: linksMatched };
   },
 
   deactivate: function() {
@@ -476,56 +484,55 @@ var filterHints = {
   },
 
   matchHintsByKey: function(event, hintMarkers) {
-    var linksMatched = hintMarkers;
-    var delay = 0;
     var keyChar = getKeyChar(event);
+    var delay = 0;
+    var userIsTypingLinkText = false;
 
-    if (event.keyCode == keyCodes.backspace || event.keyCode == keyCodes.deleteKey) {
-      // backspace clears hint key queue first, then acts on link text key queue
-      if (this.hintKeystrokeQueue.pop())
-        linksMatched = this.filterLinkHints(linksMatched);
-      else if (this.linkTextKeystrokeQueue.pop())
-        linksMatched = this.filterLinkHints(linksMatched);
-      else // both queues are empty. exit hinting mode
-        linksMatched = [];
-    } else if (event.keyCode == keyCodes.enter) {
-        // activate the lowest-numbered link hint that is visible
-        for (var i = 0, count = linksMatched.length; i < count; i++)
-          if (linksMatched[i].style.display  != 'none') {
-            linksMatched = [ linksMatched[i] ];
-            break;
-          }
+    if (event.keyCode == keyCodes.enter) {
+      // activate the lowest-numbered link hint that is visible
+      for (var i = 0, count = hintMarkers.length; i < count; i++)
+        if (hintMarkers[i].style.display  != 'none') {
+          return { linksMatched: [ hintMarkers[i] ] };
+        }
+    } else if (event.keyCode == keyCodes.backspace || event.keyCode == keyCodes.deleteKey) {
+      // backspace clears hint key queue first, then acts on link text key queue.
+      // if both queues are empty. exit hinting mode
+      if (!this.hintKeystrokeQueue.pop() && !this.linkTextKeystrokeQueue.pop())
+          return { linksMatched: [] };
     } else if (keyChar) {
-      var matchString;
-      if (/[0-9]/.test(keyChar)) {
+      if (/[0-9]/.test(keyChar))
         this.hintKeystrokeQueue.push(keyChar);
-        matchString = this.hintKeystrokeQueue.join("");
-        linksMatched = linksMatched.filter(function(linkMarker) {
-          return linkMarker.getAttribute('filtered') != 'true'
-            && linkMarker.getAttribute("hintString").indexOf(matchString) == 0;
-        });
-      } else {
+      else {
         // since we might renumber the hints, the current hintKeyStrokeQueue
         // should be rendered invalid (i.e. reset).
         this.hintKeystrokeQueue = [];
         this.linkTextKeystrokeQueue.push(keyChar);
-        linksMatched = this.filterLinkHints(linksMatched);
-      }
-
-      if (linksMatched.length == 1 && !/[0-9]/.test(keyChar)) {
-        // In filter mode, people tend to type out words past the point
-        // needed for a unique match. Hence we should avoid passing
-        // control back to command mode immediately after a match is found.
-        var delay = 200;
+        userIsTypingLinkText = true;
       }
     }
-    return { 'linksMatched': linksMatched, 'delay': delay };
+
+    // at this point, linkTextKeystrokeQueue and hintKeystrokeQueue have been updated to reflect the latest
+    // input. use them to filter the link hints accordingly.
+    var linksMatched = this.filterLinkHints(hintMarkers);
+    var matchString = this.hintKeystrokeQueue.join("");
+    linksMatched = linksMatched.filter(function(linkMarker) {
+      return linkMarker.getAttribute('filtered') != 'true'
+        && linkMarker.getAttribute("hintString").indexOf(matchString) == 0;
+    });
+
+    if (linksMatched.length == 1 && userIsTypingLinkText) {
+      // In filter mode, people tend to type out words past the point
+      // needed for a unique match. Hence we should avoid passing
+      // control back to command mode immediately after a match is found.
+      var delay = 200;
+    }
+
+    return { linksMatched: linksMatched, delay: delay };
   },
 
   /*
    * Hides the links that do not match the linkText search string and marks them with the 'filtered' DOM
-   * property. Renumbers the remainder.  Should only be called when there is a change in
-   * linkTextKeystrokeQueue, to avoid undesired renumbering.
+   * property. Renumbers the remainder.
    */
   filterLinkHints: function(hintMarkers) {
     var linksMatched = [];
@@ -562,7 +569,7 @@ var hintUtils = {
   spanWrap: function(hintString) {
     var innerHTML = [];
     for (var i = 0; i < hintString.length; i++)
-      innerHTML.push("<span>" + hintString[i].toUpperCase() + "</span>");
+      innerHTML.push("<span class='vimiumReset'>" + hintString[i].toUpperCase() + "</span>");
     return innerHTML.join("");
   },
 
@@ -571,7 +578,7 @@ var hintUtils = {
    */
   createMarkerFor: function(link) {
     var marker = document.createElement("div");
-    marker.className = "internalVimiumHintMarker vimiumHintMarker";
+    marker.className = "vimiumReset internalVimiumHintMarker vimiumHintMarker";
     marker.clickableItem = link.element;
 
     var clientRect = link.rect;

@@ -1,4 +1,4 @@
-function activateBookmarkFindModeToOpenInNewTab() { 
+function activateBookmarkFindModeToOpenInNewTab() {
   BookmarkMode.openInNewTab(true);
   BookmarkMode.enable();
 }
@@ -32,12 +32,13 @@ function activateBookmarkFindMode() {
       if(!this.initialized) {
         initialize.call(this);
       }
-      
+
       handlerStack.push({
         keydown: this.onKeydown,
+        keypress: this.onKeypress,
         keyup: this.onKeyup
       });
-      
+
       this.renderHUD();
       this.completionDialog.show();
     },
@@ -53,7 +54,7 @@ function activateBookmarkFindMode() {
       else
         HUD.show("Open bookmark in current tab");
     }
-    
+
   }
 
   // private method
@@ -63,31 +64,27 @@ function activateBookmarkFindMode() {
 
     self.completionDialog = new CompletionDialog({
       source: findBookmarks,
+
       onSelect: function(selection) {
         var url = selection.url;
-        var isABookmarklet = function(url) {
-          return url.indexOf("javascript:")===0;
-        }
+        var isABookmarklet = function(url) { return url.indexOf("javascript:") === 0; }
 
-        if(!self.newTab || isABookmarklet(url)) {
-          window.location=url;
-        }
-        else {
+        if (!self.newTab || isABookmarklet(url))
+          window.location = url;
+        else
           window.open(url);
-        }
-        
+
         self.disable();
       },
+
       renderOption: function(searchString, selection) {
-
         var displaytext = selection.title + " (" + selection.url + ")"
-
-        if(displaytext.length>70) {
-          displaytext = displaytext.substr(0, 70)+"...";
-        }
+        if (displaytext.length > 70)
+          displaytext = displaytext.substr(0, 70) + "...";
 
         return displaytext.split(new RegExp(searchString, "i")).join("<strong>"+searchString+"</strong>")
       },
+
       initialSearchText: "Type a bookmark name or URL"
     })
 
@@ -104,22 +101,18 @@ function activateBookmarkFindMode() {
         return;
 
       // TODO(philc): Ignore keys that have modifiers.
-      if (isEscape(event)) {
+      if (isEscape(event))
         self.disable();
-      } 
-
-      event.stopPropagation();
-      event.preventDefault();
     };
-    
+
+    self.onKeypress = function(event) { return false; }
+
     self.onKeyup = function(event) {
       // shift key will toggle between new tab/same tab
       if (event.keyCode == keyCodes.shiftKey && shiftWasPressedWhileToggled) {
         self.invertNewTabSetting();
         shiftWasPressedWhileToggled = false;
       }
-      event.stopPropagation();
-      event.preventDefault();
     };
   }
 
@@ -132,7 +125,5 @@ function activateBookmarkFindMode() {
     port.postMessage({query:searchString});
   };
 
-  //export global
   window.BookmarkMode = BookmarkMode;
-
 }())

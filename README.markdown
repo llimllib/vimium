@@ -60,6 +60,8 @@ Manipulating tabs:
 
     J, gT      go one tab left
     K, gt      go one tab right
+    g0         go to the first tab
+    g$         go to the last tab
     t          create tab
     x          close current tab
     X          restore closed tab (i.e. unwind the 'x' command)
@@ -135,6 +137,15 @@ discussion on the issues tracker or on the [mailing list][list_url]. If it mirro
 another browser or in Vim itself, let us know! Once you've picked something to work on, add a comment to the
 respective issue so others don't duplicate your effort.
 
+Please ensure that existing tests pass. The tests are defined in `test_harnesses/automated.html`.  To run the
+tests:
+1. Go to the extensions page
+2. Click on the arrow beside Vimium to expand the menu, and then inspect `background_page.html` in the console
+3. Type in `runTests()`.
+
+We encourage you to write tests for any new features or bugfixes. Contributing more tests for existing
+features is great too!
+
 When you're done, send us a pull request on Github. Feel free to include a change to the CREDITS file with
 your patch.
 
@@ -145,6 +156,14 @@ don't exceed 110 characters.
 
 Release Notes
 -------------
+
+1.30 (12/04/2011)
+
+- Support for image maps in link hints.
+- Counts now work with forward & backward navigation.
+- Tab & shift-tab to navigate bookmarks dialog.
+- An alternate link hints mode: type the title of a link to select it. You can enable it in Vimium's Advanced Preferences.
+- Bug fixes.
 
 1.29 (07/30/2011)
 
