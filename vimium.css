@@ -50,23 +50,32 @@ tr.vimiumReset {
 }
 
 /* Linkhints CSS */
+
 div.internalVimiumHintMarker {
   position: absolute;
-  background-color: yellow;
-  border: 1px solid #E3BE23;
   display: block;
   top: -1px;
   left: -1px;
-  padding: 0 1px;
-  box-shadow: rgba(0, 0, 0, 0.3) 2px 2px;
+  white-space: nowrap;
+
+  font-size: 11px;
+  padding: 1px 3px 0px 3px;
+  background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#FFF785), color-stop(100%,#FFC542));
+  border: solid 1px #C38A22;
+  border-radius: 3px;
+  box-shadow: 0px 3px 7px 0px rgba(0, 0, 0, 0.3);
 }
 
 div.internalVimiumHintMarker span {
+  color: #302505;
+  font-family: Helvetica, Arial, sans-serif;
   font-weight: bold;
+  font-size: 11px;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 div.internalVimiumHintMarker > .matchingCharacter {
-  color: #C79F0B;
+  color: #D4AC3A;
 }
 
 /* Help Dialog CSS */
@@ -269,4 +278,8 @@ div.vimium-completions div strong{
 
 div.vimium-completions div.vimium-noResults{
   color:#555;
-};
+}
+
+body.vimiumFindMode ::selection {
+  background: #ff9632;
+}

@@ -3,9 +3,12 @@
     <title>Vimium Options</title>
     <script src="lib/utils.js"></script>
     <script src="lib/keyboardUtils.js"></script>
-    <script src="linkHints.js"></script>
+    <script src="lib/domUtils.js"></script>
     <script src="lib/clipboard.js"></script>
+    <script src="linkHints.js"></script>
     <script src="vimiumFrontend.js"></script>
+    <script src="completionDialog.js"></script>
+    <script src="bookmarks.js"></script>
     <style type="text/css" media="screen">
       body {
         font-family:"helvetica neue", "helvetica", "arial", "sans";
@@ -28,6 +31,7 @@
       }
       td {
         padding:5px 0;
+        padding-bottom: 8px;
       }
       td#mappingsHelp {
         padding:20px 0;
@@ -83,10 +87,10 @@
 
   <script type="text/javascript">
   $ = function(id) { return document.getElementById(id); };
-  var defaultSettings = chrome.extension.getBackgroundPage().defaultSettings;
+  var bgSettings = chrome.extension.getBackgroundPage().settings;
 
   var editableFields = ["scrollStepSize", "excludedUrls", "linkHintCharacters", "userDefinedLinkHintCss",
-                        "keyMappings", "vimiumRcFile", "filterLinkHints", "previousPatterns", "nextPatterns"];
+                        "keyMappings", "vimiumRcFile", "filterLinkHints", "previousPatterns", "nextPatterns", "hideHud"];
 
   var canBeEmptyFields = ["excludedUrls", "keyMappings", "userDefinedLinkHintCss", "vimiumRcFile"];
 
@@ -116,7 +120,8 @@
   }
 
   function onOptionKeyup(event) {
-    if (event.target.getAttribute("savedValue") != event.target.value)
+    if (event.target.getAttribute("type") !== "checkbox" &&
+        event.target.getAttribute("savedValue") != event.target.value)
       enableSaveButton();
   }
 
@@ -136,24 +141,18 @@
 
       var fieldValue;
       if (field.getAttribute("type") == "checkbox") {
-        fieldValue = field.checked ? "true" : "false";
+        fieldValue = field.checked;
       } else {
         fieldValue = field.value.trim();
         field.value = fieldValue;
       }
 
-      var defaultFieldValue = (defaultSettings[fieldName] != null) ?
-        defaultSettings[fieldName].toString() : "";
-
-      // Don't save to storage if it's equal to the default
-      if (fieldValue == defaultFieldValue)
-        delete localStorage[fieldName];
-      // ..or if it's empty and not a field that we allow to be empty.
-      else if (!fieldValue && canBeEmptyFields.indexOf(fieldName) == -1) {
-        delete localStorage[fieldName];
-        fieldValue = defaultFieldValue;
+      // If it's empty and not a field that we allow to be empty, restore to the default value
+      if (!fieldValue && canBeEmptyFields.indexOf(fieldName) == -1) {
+        bgSettings.clear(fieldName);
+        fieldValue = bgSettings.get(fieldName);
       } else
-        localStorage[fieldName] = fieldValue;
+        bgSettings.set(fieldName, fieldValue);
 
       $(fieldName).value = fieldValue;
       $(fieldName).setAttribute("savedValue", fieldValue);
@@ -166,20 +165,15 @@
   // Restores select box state to saved value from localStorage.
   function populateOptions() {
     for (var i = 0; i < editableFields.length; i++) {
-      // If it's null or undefined, let's go to the default. We want to allow empty strings in certain cases.
-      if (localStorage[editableFields[i]] != "" && !localStorage[editableFields[i]]) {
-        var val = defaultSettings[editableFields[i]] || "";
-      } else {
-	    var val = localStorage[editableFields[i]];
-      }
-	  setFieldValue($(editableFields[i]), val);
+      var val = bgSettings.get(editableFields[i]) || "";
+      setFieldValue($(editableFields[i]), val);
     }
     onDataLoaded();
   }
 
   function restoreToDefaults() {
     for (var i = 0; i < editableFields.length; i++) {
-      var val = defaultSettings[editableFields[i]] || "";
+      var val = bgSettings.defaults[editableFields[i]] || "";
       setFieldValue($(editableFields[i]), val);
     }
     onDataLoaded();
@@ -188,11 +182,11 @@
 
   function setFieldValue(field, value) {
     if (field.getAttribute('type') == 'checkbox')
-      field.checked = value == "true";
-    else
+      field.checked = value;
+    else {
       field.value = value;
-
-    field.setAttribute("savedValue", value);
+      field.setAttribute("savedValue", value);
+    }
   }
 
   function openAdvancedOptions(event) {
@@ -302,11 +296,26 @@
         </td>
       </tr>
       <tr class="advancedOption">
+        <td class="caption"></td>
+        <td verticalAlign="top" class="booleanOption">
+          <div class="help">
+            <div class="example">
+              The Heads-Up Display appears when typing into text boxes.
+            </div>
+          </div>
+          <label>
+            <input id="hideHud" type="checkbox"/>
+            Hide the Heads Up Display (HUD)
+          </label>
+        </td>
+      </tr>
+      <tr class="advancedOption">
         <td class="caption">Previous Patterns</td>
         <td verticalAlign="top">
             <div class="help">
               <div class="example">
-                  Vimium will match against these patterns to navigate to a 'previous' page.
+                Vimium will match against these patterns when using the "navigate to the previous page"
+                command.
               </div>
             </div>
             <input id="previousPatterns" type="text" style="width:320px" />
@@ -317,7 +326,7 @@
         <td verticalAlign="top">
             <div class="help">
               <div class="example">
-                  Vimium will match against these patterns to navigate to a 'next' page.
+                Vimium will match against these patterns when using the "navigate to the next page" command.
               </div>
             </div>
             <input id="nextPatterns" type="text" style="width:320px" />

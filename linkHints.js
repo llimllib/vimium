@@ -33,7 +33,7 @@ var linkHints = {
     this.onKeyDownInMode = this.onKeyDownInMode.bind(this);
     this.onKeyPressInMode = this.onKeyPressInMode.bind(this);
     this.onKeyUpInMode = this.onKeyUpInMode.bind(this);
-    this.markerMatcher = settings.get('filterLinkHints') == "true" ? filterHints : alphabetHints;
+    this.markerMatcher = settings.get('filterLinkHints') ? filterHints : alphabetHints;
   },
 
   /*
@@ -41,7 +41,7 @@ var linkHints = {
    * The final expression will be something like "//button | //xhtml:button | ..."
    * We use translate() instead of lower-case() because Chrome only supports XPath 1.0.
    */
-  clickableElementsXPath: utils.makeXPath(["a", "area[@href]", "textarea", "button", "select","input[not(@type='hidden')]",
+  clickableElementsXPath: domUtils.makeXPath(["a", "area[@href]", "textarea", "button", "select","input[not(@type='hidden')]",
                              "*[@onclick or @tabindex or @role='link' or @role='button' or " +
                              "@contenteditable='' or translate(@contenteditable, 'TRUE', 'true')='true']"]),
 
@@ -97,7 +97,7 @@ var linkHints = {
     // Also note that adding these nodes to document.body all at once is significantly faster than one-by-one.
     this.hintMarkerContainingDiv = document.createElement("div");
     this.hintMarkerContainingDiv.id = "vimiumHintMarkerContainer";
-    this.hintMarkerContainingDiv.className = "vimiumReset internalVimiumHintMarker";
+    this.hintMarkerContainingDiv.className = "vimiumReset";
     for (var i = 0; i < this.hintMarkers.length; i++)
       this.hintMarkerContainingDiv.appendChild(this.hintMarkers[i]);
 
@@ -115,14 +115,14 @@ var linkHints = {
    * of digits needed to enumerate all of the links on screen.
    */
   getVisibleClickableElements: function() {
-    var resultSet = utils.evaluateXPath(this.clickableElementsXPath, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE);
+    var resultSet = domUtils.evaluateXPath(this.clickableElementsXPath, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE);
 
     var visibleElements = [];
 
     // Find all visible clickable elements.
     for (var i = 0, count = resultSet.snapshotLength; i < count; i++) {
       var element = resultSet.snapshotItem(i);
-      var clientRect = utils.getVisibleClientRect(element, clientRect);
+      var clientRect = domUtils.getVisibleClientRect(element, clientRect);
       if (clientRect !== null)
         visibleElements.push({element: element, rect: clientRect});
 
@@ -132,7 +132,7 @@ var linkHints = {
         var img = document.querySelector("img[usemap='#" + map.getAttribute("name") + "']");
         if (!img) continue;
         var imgClientRects = img.getClientRects();
-        if (!imgClientRects) continue;
+        if (imgClientRects.length == 0) continue;
         var c = element.coords.split(/,/);
         var coords = [parseInt(c[0], 10), parseInt(c[1], 10), parseInt(c[2], 10), parseInt(c[3], 10)];
         var rect = {
@@ -204,8 +204,8 @@ var linkHints = {
   activateLink: function(matchedLink, delay) {
     var that = this;
     this.delayMode = true;
-    if (this.isSelectable(matchedLink)) {
-      this.simulateSelect(matchedLink);
+    if (domUtils.isSelectable(matchedLink)) {
+      domUtils.simulateSelect(matchedLink);
       this.deactivateMode(delay, function() { that.delayMode = false; });
     } else {
       if (this.shouldOpenWithQueue) {
@@ -231,23 +231,8 @@ var linkHints = {
     }
   },
 
-  /*
-   * Selectable means the element has a text caret; this is not the same as "focusable".
-   */
-  isSelectable: function(element) {
-    var selectableTypes = ["search", "text", "password"];
-    return (element.nodeName.toLowerCase() == "input" && selectableTypes.indexOf(element.type) >= 0) ||
-        element.nodeName.toLowerCase() == "textarea";
-  },
-
   copyLinkUrl: function(link) {
     chrome.extension.sendRequest({handler: 'copyLinkUrl', data: link.href});
-  },
-
-  simulateSelect: function(element) {
-    element.focus();
-    // When focusing a textbox, put the selection caret at the end of the textbox's contents.
-    element.setSelectionRange(element.value.length, element.value.length);
   },
 
   /*
@@ -256,7 +241,8 @@ var linkHints = {
   showMarker: function(linkMarker, matchingCharCount) {
     linkMarker.style.display = "";
     for (var j = 0, count = linkMarker.childNodes.length; j < count; j++)
-      linkMarker.childNodes[j].className = (j >= matchingCharCount) ? "" : "matchingCharacter";
+      (j < matchingCharCount) ? linkMarker.childNodes[j].classList.add("matchingCharacter") :
+                                linkMarker.childNodes[j].classList.remove("matchingCharacter");
   },
 
   hideMarker: function(linkMarker) {
@@ -264,16 +250,11 @@ var linkHints = {
   },
 
   simulateClick: function(link) {
-    var event = document.createEvent("MouseEvents");
     // When "clicking" on a link, dispatch the event with the appropriate meta key (CMD on Mac, CTRL on windows)
     // to open it in a new tab if necessary.
     var metaKey = (platform == "Mac" && linkHints.shouldOpenInNewTab);
     var ctrlKey = (platform != "Mac" && linkHints.shouldOpenInNewTab);
-    event.initMouseEvent("click", true, true, window, 1, 0, 0, 0, 0, ctrlKey, false, false, metaKey, 0, null);
-
-    // Debugging note: Firefox will not execute the link's default action if we dispatch this click event,
-    // but Webkit will. Dispatching a click on an input box does not seem to focus it; we do that separately
-    link.dispatchEvent(event);
+    domUtils.simulateClick(link, { metaKey: metaKey, ctrlKey: ctrlKey });
 
     // TODO(int3): do this for @role='link' and similar elements as well
     var nodeName = link.nodeName.toLowerCase();
@@ -317,10 +298,9 @@ var alphabetHints = {
     var hintStrings = this.hintStrings(visibleElements.length);
     var hintMarkers = [];
     for (var i = 0, count = visibleElements.length; i < count; i++) {
-      var hintString = hintStrings[i];
       var marker = hintUtils.createMarkerFor(visibleElements[i]);
-      marker.innerHTML = hintUtils.spanWrap(hintString);
-      marker.setAttribute("hintString", hintString);
+      marker.hintString = hintStrings[i];
+      marker.innerHTML = hintUtils.spanWrap(marker.hintString.toUpperCase());
       hintMarkers.push(marker);
     }
 
@@ -407,7 +387,7 @@ var alphabetHints = {
 
     var matchString = this.hintKeystrokeQueue.join("");
     var linksMatched = hintMarkers.filter(function(linkMarker) {
-      return linkMarker.getAttribute("hintString").indexOf(matchString) == 0;
+      return linkMarker.hintString.indexOf(matchString) == 0;
     });
     return { linksMatched: linksMatched };
   },
@@ -440,11 +420,13 @@ var filterHints = {
     }
   },
 
-  setMarkerAttributes: function(marker, linkHintNumber) {
-    var hintString = (linkHintNumber + 1).toString();
+  generateHintString: function(linkHintNumber) {
+    return (linkHintNumber + 1).toString();
+  },
+
+  generateLinkText: function(element) {
     var linkText = "";
     var showLinkText = false;
-    var element = marker.clickableItem;
     // toLowerCase is necessary as html documents return 'IMG'
     // and xhtml documents return 'img'
     var nodeName = element.nodeName.toLowerCase();
@@ -466,10 +448,12 @@ var filterHints = {
     } else {
       linkText = element.textContent || element.innerHTML;
     }
-    linkText = linkText.trim().toLowerCase();
-    marker.setAttribute("hintString", hintString);
-    marker.innerHTML = hintUtils.spanWrap(hintString + (showLinkText ? ": " + linkText : ""));
-    marker.setAttribute("linkText", linkText);
+    return { text: linkText, show: showLinkText };
+  },
+
+  renderMarker: function(marker) {
+    marker.innerHTML = hintUtils.spanWrap(marker.hintString +
+                                          (marker.showLinkText ? ": " + marker.linkText : ""));
   },
 
   getHintMarkers: function(visibleElements) {
@@ -477,7 +461,11 @@ var filterHints = {
     var hintMarkers = [];
     for (var i = 0, count = visibleElements.length; i < count; i++) {
       var marker = hintUtils.createMarkerFor(visibleElements[i]);
-      this.setMarkerAttributes(marker, i);
+      marker.hintString = this.generateHintString(i);
+      var linkTextObject = this.generateLinkText(marker.clickableItem);
+      marker.linkText = linkTextObject.text;
+      marker.showLinkText = linkTextObject.show;
+      this.renderMarker(marker);
       hintMarkers.push(marker);
     }
     return hintMarkers;
@@ -516,8 +504,7 @@ var filterHints = {
     var linksMatched = this.filterLinkHints(hintMarkers);
     var matchString = this.hintKeystrokeQueue.join("");
     linksMatched = linksMatched.filter(function(linkMarker) {
-      return linkMarker.getAttribute('filtered') != 'true'
-        && linkMarker.getAttribute("hintString").indexOf(matchString) == 0;
+      return !linkMarker.filtered && linkMarker.hintString.indexOf(matchString) == 0;
     });
 
     if (linksMatched.length == 1 && userIsTypingLinkText) {
@@ -531,8 +518,8 @@ var filterHints = {
   },
 
   /*
-   * Hides the links that do not match the linkText search string and marks them with the 'filtered' DOM
-   * property. Renumbers the remainder.
+   * Marks the links that do not match the linkText search string with the 'filtered' DOM property. Renumbers
+   * the remainder if necessary.
    */
   filterLinkHints: function(hintMarkers) {
     var linksMatched = [];
@@ -540,14 +527,16 @@ var filterHints = {
 
     for (var i = 0; i < hintMarkers.length; i++) {
       var linkMarker = hintMarkers[i];
-      var matchedLink = linkMarker.getAttribute("linkText").toLowerCase()
-                                  .indexOf(linkSearchString.toLowerCase()) >= 0;
+      var matchedLink = linkMarker.linkText.toLowerCase().indexOf(linkSearchString.toLowerCase()) >= 0;
 
       if (!matchedLink) {
-        linkMarker.setAttribute("filtered", "true");
+        linkMarker.filtered = true;
       } else {
-        this.setMarkerAttributes(linkMarker, linksMatched.length);
-        linkMarker.setAttribute("filtered", "false");
+        linkMarker.filtered = false;
+        var oldHintString = linkMarker.hintString;
+        linkMarker.hintString = this.generateHintString(linksMatched.length);
+        if (linkMarker.hintString != oldHintString)
+          this.renderMarker(linkMarker);
         linksMatched.push(linkMarker);
       }
     }
@@ -569,7 +558,7 @@ var hintUtils = {
   spanWrap: function(hintString) {
     var innerHTML = [];
     for (var i = 0; i < hintString.length; i++)
-      innerHTML.push("<span class='vimiumReset'>" + hintString[i].toUpperCase() + "</span>");
+      innerHTML.push("<span class='vimiumReset'>" + hintString[i] + "</span>");
     return innerHTML.join("");
   },
 
