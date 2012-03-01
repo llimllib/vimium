@@ -690,7 +690,6 @@
   function init() {
     clearKeyMappingsAndSetDefaults();
 
-<<<<<<< HEAD
     if (localStorage["vimiumRcFile"]) {
         var xhr = new XMLHttpRequest();
         console.log("requesting vimiumrc file: ", localStorage["vimiumRcFile"]);
@@ -706,10 +705,6 @@
         if (settings.has("keyMappings"))
           parseCustomKeyMappings(localStorage["keyMappings"]);
     }
-=======
-    if (settings.has("keyMappings"))
-      parseCustomKeyMappings(settings.get("keyMappings"));
->>>>>>> 652a90cf12fc8c7d45ec1b2c28689de43a28af39
 
     // In version 1.22, we changed the mapping for "d" and "u" to be scroll page down/up instead of close
     // and restore tab. For existing users, we want to preserve existing behavior for them by adding some
